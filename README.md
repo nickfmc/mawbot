@@ -27,7 +27,10 @@ WP GPT Chatbot is a WordPress plugin that allows you to integrate a custom ChatG
 
 1. After activation, go to WordPress admin panel > GPT Chatbot
 2. Enter your OpenAI API key in the API Settings section
-3. Choose the OpenAI model (GPT-3.5 Turbo is recommended for a balance of cost and performance)
+3. Choose the OpenAI model:
+   - GPT-4.1 Nano: Default model with excellent performance-to-cost ratio (recommended)
+   - GPT-3.5 Turbo: Older model with good cost efficiency
+   - GPT-4: Higher quality responses but more expensive
 4. Add your custom training material in the System Prompt field
 5. Customize the appearance settings:
    - Bot Name: The name displayed in the chatbot header
@@ -39,6 +42,14 @@ WP GPT Chatbot is a WordPress plugin that allows you to integrate a custom ChatG
 6. Click "Save Changes" to apply your settings
 
 ## Training Your Chatbot
+
+There are three ways to train your chatbot:
+
+1. **System Prompt** - Provide general instructions and guidelines
+2. **Training Material** - Add specific Q&A pairs manually or via CSV import
+3. **Website Content** - Automatically use your website content as training material
+
+### System Prompt
 
 The System Prompt field is where you can provide instructions and training material for your chatbot. This is what guides the chatbot's responses. Here are some examples of what you might include:
 
@@ -85,6 +96,72 @@ A: You can track your order by logging into your account or using the tracking n
 Q: Do you offer gift wrapping?
 A: Yes, we offer gift wrapping for $5 per item. You can select this option during checkout.
 ```
+
+### Website Content Crawler
+
+The Website Content Crawler feature allows the chatbot to automatically use your WordPress website content as training material:
+
+1. Go to WordPress admin panel > GPT Chatbot > Website Content tab
+2. Enable the Content Crawler
+3. Configure which content types, categories, and tags to include
+4. Optionally exclude specific pages
+5. Choose whether to automatically refresh content on a schedule
+6. Click "Refresh Website Content Now" to start the initial content processing
+
+This feature will:
+- Automatically convert your pages and posts into training material
+- Format the content with proper context, including source URLs
+- Allow the chatbot to answer questions about your website content
+- Keep the training material up-to-date with your latest content changes
+
+The Website Content Crawler is particularly useful for:
+- Large websites with lots of content
+- Frequently updated websites
+- Sites with product information, FAQs, or documentation
+- Reducing the manual effort of training your chatbot
+
+## Token Usage Optimization
+
+WP GPT Chatbot includes several features to optimize token usage and improve response performance when using the OpenAI API:
+
+### Response Caching
+
+The response caching system stores answers to previously asked questions, which:
+- Reduces API costs by avoiding redundant API calls
+- Improves response time for common questions
+- Maintains a consistent user experience
+
+To configure caching:
+1. Go to WordPress admin panel > GPT Chatbot
+2. Scroll to the "Token Usage & Performance Settings" section
+3. Enable/disable caching as needed
+4. Set the cache expiration time (default: 1 week)
+5. Use the "Clear Response Cache" button after making significant changes to your training data
+
+### Selective Context Retrieval
+
+The selective context feature intelligently filters training content to:
+- Only send relevant training material to the API based on the user's question
+- Dramatically reduce token usage for each request
+- Improve response quality by focusing on the most relevant information
+
+This feature can be enabled/disabled in the "Token Usage & Performance Settings" section.
+
+### Conversation Memory Limits
+
+Control how much conversation history is sent with each request:
+- Set the number of previous messages to include (default: 5)
+- Lower values reduce token usage but may impact conversation coherence
+- Higher values provide better conversation context but increase token usage
+
+### Model Selection
+
+The plugin supports multiple OpenAI models with different performance and cost characteristics:
+- GPT-4.1 Nano (default): Best balance of performance and cost
+- GPT-3.5 Turbo: Good for basic Q&A with lower cost
+- GPT-4: Highest quality responses but more expensive
+
+Choose the appropriate model based on your specific needs and budget constraints.
 
 ## Advanced Customization
 

@@ -22,6 +22,7 @@ define('WP_GPT_CHATBOT_URL', plugin_dir_url(__FILE__));
 
 // Include necessary files
 require_once WP_GPT_CHATBOT_PATH . 'includes/class-database-manager.php';
+require_once WP_GPT_CHATBOT_PATH . 'includes/class-content-crawler.php';
 require_once WP_GPT_CHATBOT_PATH . 'includes/admin/class-admin-settings.php';
 require_once WP_GPT_CHATBOT_PATH . 'includes/api/class-chatgpt-api.php';
 require_once WP_GPT_CHATBOT_PATH . 'includes/frontend/class-chatbot-widget.php';
@@ -33,21 +34,68 @@ function wp_gpt_chatbot_activate() {
     if (!get_option('wp_gpt_chatbot_settings')) {
         $default_settings = array(
             'api_key' => '',
-            'model' => 'gpt-3.5-turbo',
-            'training_prompt' => 'You are a helpful assistant for our website.',
-            'unknown_response' => 'I don\'t have enough information to answer that question yet. Your question has been logged and our team will provide an answer soon.',
+            'model' => 'gpt-4.1-nano',
+            'training_prompt' => 'CRITICAL INSTRUCTIONS: You are a chatbot that can ONLY answer questions using the specific training data provided below. You are FORBIDDEN from using any general AI knowledge, including information about famous people, technology, or any other topics not explicitly provided in your training data. 
+
+STRICT RULES:
+1. ONLY use information from the Q&A pairs provided in your training data
+2. If a question is not directly answered in your training data, you MUST respond with: "I don\'t have that specific information in my knowledge base. Please contact us directly for assistance."
+3. Do NOT provide general knowledge answers about famous people, historical figures, or any other topics
+4. Do NOT make up or infer answers that aren\'t explicitly in your training data
+5. Stay strictly within the boundaries of your provided training material
+
+You must follow these rules without exception.',
+            'unknown_response' => 'I don\'t have that specific information in my knowledge base. I can only answer questions based on the training data I\'ve been provided. Please contact us directly for assistance with questions outside my scope.',
             'primary_color' => '#007bff',
             'secondary_color' => '#ffffff',
             'bot_name' => 'GPT Assistant',
             'position' => 'bottom-right',
             'welcome_message' => 'Hello! How can I help you today?',
-            'training_data' => array()
+            'training_data' => array(),
+            'website_content' => array(
+                'enabled' => false,
+                'auto_refresh' => false,
+                'refresh_frequency' => 'daily',
+                'post_types' => array('page'),
+                'categories' => array(),
+                'tags' => array(),
+                'excluded_pages' => array()
+            ),
+            // Token optimization settings
+            'enable_caching' => true,
+            'cache_expiration' => 604800, // 1 week in seconds
+            'conversation_memory' => 5,
+            'selective_context' => true
         );
         update_option('wp_gpt_chatbot_settings', $default_settings);
     }
     
     // Create database tables
     WP_GPT_Chatbot_Database_Manager::create_tables();
+    
+    // Schedule content refresh if enabled
+    $settings = get_option('wp_gpt_chatbot_settings');
+    if (isset($settings['website_content']) && 
+        isset($settings['website_content']['enabled']) && 
+        $settings['website_content']['enabled'] &&
+        isset($settings['website_content']['auto_refresh']) && 
+        $settings['website_content']['auto_refresh']) {
+        
+        $frequency = isset($settings['website_content']['refresh_frequency']) 
+            ? $settings['website_content']['refresh_frequency'] 
+            : 'daily';
+            
+        if (!wp_next_scheduled('wp_gpt_chatbot_content_refresh')) {
+            wp_schedule_event(time(), $frequency, 'wp_gpt_chatbot_content_refresh');
+        }
+    }
+}
+
+// Deactivation hook
+register_deactivation_hook(__FILE__, 'wp_gpt_chatbot_deactivate');
+function wp_gpt_chatbot_deactivate() {
+    // Clear scheduled events
+    wp_clear_scheduled_hook('wp_gpt_chatbot_content_refresh');
 }
 
 // Initialize the plugin
@@ -55,6 +103,10 @@ function wp_gpt_chatbot_init() {
     // Initialize admin settings
     $admin_settings = new WP_GPT_Chatbot_Admin_Settings();
     $admin_settings->init();
+    
+    // Initialize content crawler
+    $content_crawler = new WP_GPT_Chatbot_Content_Crawler();
+    $content_crawler->init();
     
     // Initialize ChatGPT API
     $chatgpt_api = new WP_GPT_Chatbot_API();
@@ -126,11 +178,14 @@ function wp_gpt_chatbot_shortcode($atts) {
         return '<p>' . __('ChatGPT API key not configured.', 'wp-gpt-chatbot') . '</p>';
     }
     
-    // Parse attributes
+    // Parse attributes, but always default to settings welcome_message if not set or empty
     $atts = shortcode_atts(array(
         'height' => '400px',
-        'welcome_message' => $settings['welcome_message'],
+        'welcome_message' => '',
     ), $atts, 'wp_gpt_chatbot');
+    if (empty($atts['welcome_message'])) {
+        $atts['welcome_message'] = isset($settings['welcome_message']) ? $settings['welcome_message'] : '';
+    }
     
     // Start output buffering
     ob_start();

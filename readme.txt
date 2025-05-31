@@ -20,6 +20,9 @@ Features:
 * Easy integration into any WordPress website
 * Customizable appearance (colors, position, bot name)
 * Mobile-friendly design
+* Token usage optimization features to reduce API costs
+* Response caching for faster replies and lower costs
+* Selective context retrieval to optimize token usage
 
 == Installation ==
 
@@ -43,6 +46,15 @@ Enter your training material/instructions in the System Prompt field in the plug
 = Can I customize the appearance of the chatbot? =
 
 Yes, you can change the primary and secondary colors, position, bot name, and welcome message.
+
+= How can I optimize token usage and reduce API costs? =
+
+The plugin includes several token optimization features:
+1. Response caching - Store and reuse responses for commonly asked questions
+2. Selective context - Only send relevant training material with each request
+3. Conversation memory - Control how much conversation history is retained
+4. Model selection - Choose between more efficient or more capable models
+5. Cache management - Clear the cache when needed or set custom expiration times
 
 == Screenshots ==
 

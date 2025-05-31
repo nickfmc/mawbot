@@ -24,8 +24,8 @@ class WP_GPT_Chatbot_Widget {
     public function render_chatbot() {
         $settings = get_option('wp_gpt_chatbot_settings');
         
-        // Don't render if API key is not set
-        if (empty($settings['api_key'])) {
+        // Don't render if API key is not set or position is 'none'
+        if (empty($settings['api_key']) || (isset($settings['position']) && $settings['position'] === 'none')) {
             return;
         }
         
