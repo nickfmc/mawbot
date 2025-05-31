@@ -202,15 +202,39 @@ function wp_gpt_chatbot_shortcode($atts) {
         var $popup = $wrapper.find('.wp-gpt-chatbot-inline-popup');
         var conversation = [];
         var welcomeMessage = <?php echo json_encode($atts['welcome_message']); ?>;
-        function renderPopup(contentHtml) {
+        function renderPopup(contentHtml, animateOpen = true) {
             $popup.html(
                 '<div class="wp-gpt-chatbot-popup-content">'+contentHtml+'</div>'+
                 '<div class="wp-gpt-chatbot-popup-actions">'+
-                    '<button type="button" class="wp-gpt-chatbot-popup-close">Close Chat</button>'+
                     '<button type="button" class="wp-gpt-chatbot-popup-human">Contact a Human</button>'+
+                    '<button type="button" class="wp-gpt-chatbot-popup-close" aria-label="Close"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 4L14 14M14 4L4 14" stroke="#243550" stroke-width="2" stroke-linecap="round"/></svg></button>'+
                 '</div>'
-            ).show();
+            );
+            if (animateOpen) {
+                $popup.show();
+                requestAnimationFrame(function(){
+                    $popup.addClass('open').removeClass('closing');
+                });
+            } else {
+                $popup.show().addClass('open').removeClass('closing');
+            }
         }
+
+        function typeAssistantMessage($container, text, callback) {
+            var i = 0;
+            var speed = 18; // ms per character
+            function type() {
+                if (i <= text.length) {
+                    $container.html(text.substring(0, i).replace(/\n/g,'<br>'));
+                    i++;
+                    setTimeout(type, speed);
+                } else if (callback) {
+                    callback();
+                }
+            }
+            type();
+        }
+
         $form.on('submit', function(e){
             e.preventDefault();
             var question = $input.val().trim();
@@ -234,11 +258,17 @@ function wp_gpt_chatbot_shortcode($atts) {
                             var msg = conversation[i];
                             if(msg.role==='user'){
                                 html += '<div class="wp-gpt-chatbot-msg-user"><span>' + $('<div>').text(msg.content).html() + '</span></div>';
+                            }else if(i === conversation.length-1){
+                                html += '<div class="wp-gpt-chatbot-msg-assistant"><span class="wp-gpt-type-anim"></span></div>';
                             }else{
                                 html += '<div class="wp-gpt-chatbot-msg-assistant"><span>' + $('<div>').text(msg.content).html().replace(/\n/g,'<br>') + '</span></div>';
                             }
                         }
                         renderPopup(html);
+                        var $typeAnim = $popup.find('.wp-gpt-type-anim');
+                        if($typeAnim.length) {
+                            typeAssistantMessage($typeAnim, response.data.message);
+                        }
                     }else{
                         renderPopup('<div class="wp-gpt-chatbot-error">'+$('<div>').text(response.data.message).html()+'</div>');
                     }
@@ -250,8 +280,8 @@ function wp_gpt_chatbot_shortcode($atts) {
             $input.val('');
         });
         $wrapper.on('click','.wp-gpt-chatbot-popup-close',function(){
-            $popup.hide();
-            conversation = [];
+            $popup.removeClass('open').addClass('closing');
+            setTimeout(function(){ $popup.hide().removeClass('closing'); conversation = []; }, 400);
         });
         $wrapper.on('click','.wp-gpt-chatbot-popup-human',function(){
             $popup.append('<div class="wp-gpt-chatbot-human-msg">A human support agent will contact you soon. (You can customize this action.)</div>');
