@@ -200,6 +200,15 @@ if (isset($_POST['import_training']) && isset($_FILES['training_csv'])) {
                     <p class="description"><?php echo esc_html__('This message will be shown when the chatbot cannot confidently answer a question based on the training material.', 'wp-gpt-chatbot'); ?></p>
                 </td>
             </tr>
+            <tr>
+                <th scope="row">
+                    <label for="wp_gpt_chatbot_settings[placeholder_suggestions]"><?php echo esc_html__('Input Placeholder Suggestions', 'wp-gpt-chatbot'); ?></label>
+                </th>
+                <td>
+                    <input type="text" id="wp_gpt_chatbot_settings[placeholder_suggestions]" name="wp_gpt_chatbot_settings[placeholder_suggestions]" value="<?php echo isset($settings['placeholder_suggestions']) ? esc_attr($settings['placeholder_suggestions']) : ''; ?>" class="regular-text" />
+                    <p class="description"><?php echo esc_html__('Enter placeholder suggestions separated by a comma. Each will be animated in the input placeholder.', 'wp-gpt-chatbot'); ?></p>
+                </td>
+            </tr>
         </table>
         
         <h2><?php echo esc_html__('Appearance Settings', 'wp-gpt-chatbot'); ?></h2>

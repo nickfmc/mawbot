@@ -186,8 +186,9 @@ function wp_gpt_chatbot_shortcode($atts) {
     $unique_id = 'wp-gpt-chatbot-inline-' . uniqid();
     $primary_color = isset($settings['primary_color']) ? $settings['primary_color'] : '#007bff';
     $secondary_color = isset($settings['secondary_color']) ? $settings['secondary_color'] : '#ffffff';
+    $placeholder_suggestions = isset($settings['placeholder_suggestions']) ? $settings['placeholder_suggestions'] : '';
     ?>
-    <div id="<?php echo esc_attr($unique_id); ?>" class="wp-gpt-chatbot-inline-form-wrapper" style="--wp-gpt-primary: <?php echo esc_attr($primary_color); ?>; --wp-gpt-secondary: <?php echo esc_attr($secondary_color); ?>;">
+    <div id="<?php echo esc_attr($unique_id); ?>" class="wp-gpt-chatbot-inline-form-wrapper" style="--wp-gpt-primary: <?php echo esc_attr($primary_color); ?>; --wp-gpt-secondary: <?php echo esc_attr($secondary_color); ?>;" data-placeholder-suggestions="<?php echo esc_attr($placeholder_suggestions); ?>">
         <form class="wp-gpt-chatbot-inline-form" autocomplete="off">
             <input type="text" class="wp-gpt-chatbot-inline-input" placeholder="How do you service global clients?" />
             <button type="submit" class="wp-gpt-chatbot-inline-btn">Ask Us How &gt;</button>
@@ -288,6 +289,87 @@ function wp_gpt_chatbot_shortcode($atts) {
         });
         $input.on('focus',function(){
             // Do not hide popup on focus anymore
+        });
+        var placeholderAnimationActive = true;
+        var placeholderTimeout;
+        var placeholderSuggestions = $wrapper.data('placeholder-suggestions');
+        var $pillList = null;
+        var phrases = [];
+        if (placeholderSuggestions) {
+            phrases = placeholderSuggestions.split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+            if (phrases.length > 0) {
+                // Add pill list container above the form
+                $pillList = $('<div class="wp-gpt-chatbot-pills-list" style="display:none"></div>');
+                phrases.forEach(function(phrase) {
+                    var $pill = $('<button type="button" class="wp-gpt-chatbot-pill"></button>').text(phrase);
+                    $pill.on('click', function() {
+                        $input.val(phrase).focus();
+                        $pillList.hide();
+                        $form.submit();
+                    });
+                    $pillList.append($pill);
+                });
+                $wrapper.find('.wp-gpt-chatbot-inline-form').before($pillList);
+
+                // Show pills on input focus
+                $input.on('focus', function(){
+                    $pillList.fadeIn(120);
+                });
+                // Hide pills on blur (with slight delay to allow click)
+                $input.on('blur', function(){
+                    setTimeout(function(){ $pillList.fadeOut(120); }, 180);
+                });
+            }
+        }
+        // Placeholder animation logic (must run after pill list setup)
+        if (phrases.length > 0) {
+            var input = $input.get(0);
+            var phraseIndex = 0;
+            var charIndex = 0;
+            var typing = true;
+            var delay = 60;
+            var eraseDelay = 30;
+            var holdDelay = 1200;
+            function typePlaceholder() {
+                if (!placeholderAnimationActive) return;
+                var phrase = phrases[phraseIndex];
+                if (typing) {
+                    if (charIndex <= phrase.length) {
+                        input.setAttribute('placeholder', phrase.substring(0, charIndex));
+                        charIndex++;
+                        placeholderTimeout = setTimeout(typePlaceholder, delay);
+                    } else {
+                        typing = false;
+                        placeholderTimeout = setTimeout(typePlaceholder, holdDelay);
+                    }
+                } else {
+                    if (charIndex > 0) {
+                        charIndex--;
+                        input.setAttribute('placeholder', phrase.substring(0, charIndex));
+                        placeholderTimeout = setTimeout(typePlaceholder, eraseDelay);
+                    } else {
+                        typing = true;
+                        phraseIndex = (phraseIndex + 1) % phrases.length;
+                        placeholderTimeout = setTimeout(typePlaceholder, 400);
+                    }
+                }
+            }
+            typePlaceholder();
+            $input.on('focus', function(){
+                input.setAttribute('placeholder', '');
+            });
+            $input.on('blur', function(){
+                if (!placeholderAnimationActive) return;
+                charIndex = 0; typing = true;
+                phraseIndex = 0;
+                typePlaceholder();
+            });
+        }
+        // Stop placeholder animation and set generic placeholder on question submit
+        $form.on('submit', function(e){
+            placeholderAnimationActive = false;
+            clearTimeout(placeholderTimeout);
+            $input.attr('placeholder', 'What else is on your mind?');
         });
     })(jQuery);
     </script>

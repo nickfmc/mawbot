@@ -211,6 +211,11 @@ class WP_GPT_Chatbot_Admin_Settings {
         error_log('GPT Chatbot validate_settings - merged training_data: ' . print_r($merged_training_data, true));
         $output['training_data'] = $merged_training_data;
         
+        // Validate and save the new placeholder_suggestions field
+        if (isset($input['placeholder_suggestions'])) {
+            $output['placeholder_suggestions'] = sanitize_text_field($input['placeholder_suggestions']);
+        }
+        
         // Apply filters for extensions
         $output = apply_filters('wp_gpt_chatbot_validate_settings', $output, $input);
         
