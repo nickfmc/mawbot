@@ -172,13 +172,9 @@ add_shortcode('wp_gpt_chatbot', 'wp_gpt_chatbot_shortcode');
 function wp_gpt_chatbot_shortcode($atts) {
     // Get plugin settings
     $settings = get_option('wp_gpt_chatbot_settings');
-    
-    // Don't render if API key is not set
     if (empty($settings['api_key'])) {
         return '<p>' . __('ChatGPT API key not configured.', 'wp-gpt-chatbot') . '</p>';
     }
-    
-    // Parse attributes, but always default to settings welcome_message if not set or empty
     $atts = shortcode_atts(array(
         'height' => '400px',
         'welcome_message' => '',
@@ -186,33 +182,86 @@ function wp_gpt_chatbot_shortcode($atts) {
     if (empty($atts['welcome_message'])) {
         $atts['welcome_message'] = isset($settings['welcome_message']) ? $settings['welcome_message'] : '';
     }
-    
-    // Start output buffering
     ob_start();
-    
-    // Generate a unique ID for this instance
     $unique_id = 'wp-gpt-chatbot-inline-' . uniqid();
+    $primary_color = isset($settings['primary_color']) ? $settings['primary_color'] : '#007bff';
+    $secondary_color = isset($settings['secondary_color']) ? $settings['secondary_color'] : '#ffffff';
     ?>
-    <div id="<?php echo esc_attr($unique_id); ?>" class="wp-gpt-chatbot-inline" style="height: <?php echo esc_attr($atts['height']); ?>">
-        <div class="wp-gpt-chatbot-inline-messages">
-            <div class="wp-gpt-chatbot-message bot">
-                <div class="wp-gpt-chatbot-message-content"><?php echo esc_html($atts['welcome_message']); ?></div>
-            </div>
-        </div>
-        <div class="wp-gpt-chatbot-inline-input-container">
-            <textarea class="wp-gpt-chatbot-input" placeholder="<?php echo esc_attr__('Type your message...', 'wp-gpt-chatbot'); ?>"></textarea>
-            <button class="wp-gpt-chatbot-send" style="background-color: <?php echo esc_attr($settings['primary_color']); ?>; color: <?php echo esc_attr($settings['secondary_color']); ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-            </button>
-        </div>
+    <div id="<?php echo esc_attr($unique_id); ?>" class="wp-gpt-chatbot-inline-form-wrapper" style="--wp-gpt-primary: <?php echo esc_attr($primary_color); ?>; --wp-gpt-secondary: <?php echo esc_attr($secondary_color); ?>;">
+        <form class="wp-gpt-chatbot-inline-form" autocomplete="off">
+            <input type="text" class="wp-gpt-chatbot-inline-input" placeholder="How do you service global clients?" />
+            <button type="submit" class="wp-gpt-chatbot-inline-btn">Ask Us How &gt;</button>
+        </form>
+        <div class="wp-gpt-chatbot-inline-popup"></div>
     </div>
+    <script>
+    (function($){
+        var $wrapper = $('#<?php echo esc_js($unique_id); ?>');
+        var $form = $wrapper.find('.wp-gpt-chatbot-inline-form');
+        var $input = $wrapper.find('.wp-gpt-chatbot-inline-input');
+        var $popup = $wrapper.find('.wp-gpt-chatbot-inline-popup');
+        var conversation = [];
+        var welcomeMessage = <?php echo json_encode($atts['welcome_message']); ?>;
+        function renderPopup(contentHtml) {
+            $popup.html(
+                '<div class="wp-gpt-chatbot-popup-content">'+contentHtml+'</div>'+
+                '<div class="wp-gpt-chatbot-popup-actions">'+
+                    '<button type="button" class="wp-gpt-chatbot-popup-close">Close Chat</button>'+
+                    '<button type="button" class="wp-gpt-chatbot-popup-human">Contact a Human</button>'+
+                '</div>'
+            ).show();
+        }
+        $form.on('submit', function(e){
+            e.preventDefault();
+            var question = $input.val().trim();
+            if(!question) return;
+            conversation.push({role:'user',content:question});
+            renderPopup('<div class="wp-gpt-chatbot-thinking">Thinking...</div>');
+            $.ajax({
+                url: wpGptChatbotSettings.ajaxUrl,
+                type: 'POST',
+                data: {
+                    action: 'wp_gpt_chatbot_send_message',
+                    nonce: wpGptChatbotSettings.nonce,
+                    message: question,
+                    conversation: JSON.stringify(conversation)
+                },
+                success: function(response){
+                    if(response.success){
+                        conversation.push({role:'assistant',content:response.data.message});
+                        var html = '';
+                        for(var i=0;i<conversation.length;i++){
+                            var msg = conversation[i];
+                            if(msg.role==='user'){
+                                html += '<div class="wp-gpt-chatbot-msg-user"><span>' + $('<div>').text(msg.content).html() + '</span></div>';
+                            }else{
+                                html += '<div class="wp-gpt-chatbot-msg-assistant"><span>' + $('<div>').text(msg.content).html().replace(/\n/g,'<br>') + '</span></div>';
+                            }
+                        }
+                        renderPopup(html);
+                    }else{
+                        renderPopup('<div class="wp-gpt-chatbot-error">'+$('<div>').text(response.data.message).html()+'</div>');
+                    }
+                },
+                error: function(){
+                    renderPopup('<div class="wp-gpt-chatbot-error">Sorry, there was an error. Please try again.</div>');
+                }
+            });
+            $input.val('');
+        });
+        $wrapper.on('click','.wp-gpt-chatbot-popup-close',function(){
+            $popup.hide();
+            conversation = [];
+        });
+        $wrapper.on('click','.wp-gpt-chatbot-popup-human',function(){
+            $popup.append('<div class="wp-gpt-chatbot-human-msg">A human support agent will contact you soon. (You can customize this action.)</div>');
+        });
+        $input.on('focus',function(){
+            // Do not hide popup on focus anymore
+        });
+    })(jQuery);
+    </script>
     <?php
-    
-    // Get the buffer content and clean the buffer
     $output = ob_get_clean();
-    
     return $output;
 }

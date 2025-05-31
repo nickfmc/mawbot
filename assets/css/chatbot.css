@@ -229,6 +229,180 @@
     height: 20px;
 }
 
+/* Shortcode Inline Chatbot Styles */
+.wp-gpt-chatbot-inline-form-wrapper {
+    --wp-gpt-primary: #007bff;
+    --wp-gpt-secondary: #ffffff;
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
+    position: relative;
+    font-family: inherit;
+}
+
+.wp-gpt-chatbot-inline-form {
+    display: flex;
+    align-items: center;
+    background: #fff;
+    border-radius: 10px;
+border: 2px solid #FF9F00;
+background: rgba(255, 255, 255, 0.75);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+}
+
+.wp-gpt-chatbot-inline-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: #222;
+    font-size: 1.1em;
+    padding: 19px 17px;
+}
+
+.wp-gpt-chatbot-inline-input:focus {
+    outline: none !important;
+}
+
+.wp-gpt-chatbot-inline-input::placeholder {
+    color: #243550;
+    font-weight: 700;
+    opacity: 1;
+}
+
+.wp-gpt-chatbot-inline-btn {
+    border-radius: 8px;
+    background: linear-gradient(90deg, #9E005D 0%, #FF9F00 100%);
+    color: #fff;
+    border: none;
+    padding: 18px 28px;
+    font-weight: bold;
+    font-size: 1em;
+    margin-left: 10px;
+    cursor: pointer;
+    transition: background 0.9s, color 0.2s;
+    box-shadow: 0 2px 8px rgba(76,110,245,0.10);
+}
+.wp-gpt-chatbot-inline-btn:hover {
+     background: linear-gradient(90deg, #FF9F00 0%, #FF9F00 100%);
+     color: #fff !important;
+}
+
+.wp-gpt-chatbot-inline-popup {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 60px;
+    z-index: 10;
+    background: rgba(255,255,255,0.7);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    padding: 0;
+    min-height: 120px;
+    max-height: 400px;
+    overflow-y: auto;
+    margin-top: 10px;
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+    border: 1px solid rgba(255,255,255,0.18);
+}
+
+.wp-gpt-chatbot-popup-content {
+    padding: 20px 20px 10px 20px;
+    max-height: 260px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.wp-gpt-chatbot-msg-user {
+    display: flex;
+    justify-content: flex-end;
+    width: 100%;
+}
+.wp-gpt-chatbot-msg-user span {
+    background: linear-gradient(90deg, var(--wp-gpt-primary) 0%, #FF9F00 100%);
+    color: #243550;
+    font-weight: 500;
+    border-radius: 18px 18px 4px 18px;
+    padding: 10px 18px;
+    display: inline-block;
+    max-width: 80%;
+    word-break: break-word;
+    box-shadow: 0 2px 8px rgba(76,110,245,0.08);
+    font-size: 1em;
+    line-height: 1.5;
+}
+
+.wp-gpt-chatbot-msg-assistant {
+    display: flex;
+    justify-content: flex-start;
+    width: 100%;
+}
+.wp-gpt-chatbot-msg-assistant span {
+    background: #fff;
+    color: #243550;
+    border-radius: 18px 18px 18px 4px;
+    padding: 10px 18px;
+    display: inline-block;
+    max-width: 80%;
+    word-break: break-word;
+    box-shadow: 0 2px 8px rgba(36,53,80,0.08);
+    font-size: 1em;
+    line-height: 1.5;
+    border: 1px solid #e9ecef;
+}
+
+.wp-gpt-chatbot-thinking {
+    color: var(--wp-gpt-primary);
+    font-style: italic;
+    margin-bottom: 8px;
+}
+
+.wp-gpt-chatbot-error {
+    color: #b00020;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+.wp-gpt-chatbot-human-msg {
+    color: var(--wp-gpt-primary);
+    font-style: italic;
+    margin-top: 10px;
+}
+
+.wp-gpt-chatbot-popup-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 10px 20px;
+    border-top: 1px solid #eee;
+    background: rgba(255,255,255,0.3);
+    border-radius: 0 0 16px 16px;
+}
+
+.wp-gpt-chatbot-popup-close,
+.wp-gpt-chatbot-popup-human {
+    background: #FF9F00;
+    color: #243550;
+    border: none;
+    border-radius: 20px;
+    padding: 7px 16px;
+    font-size: 1em;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    box-shadow: 0 2px 8px rgba(76,110,245,0.10);
+    font-weight: 700;
+}
+.wp-gpt-chatbot-popup-close:hover,
+.wp-gpt-chatbot-popup-human:hover {
+    background: linear-gradient(90deg, var(--wp-gpt-secondary) 0%, #e9ecef 100%);
+    color: var(--wp-gpt-primary);
+   
+}
+
 /* Mobile Responsive */
 @media (max-width: 576px) {
     .wp-gpt-chatbot-box {
@@ -238,5 +412,14 @@
     
     .wp-gpt-chatbot-inline {
         height: 350px !important;
+    }
+}
+
+@media (max-width: 600px) {
+    .wp-gpt-chatbot-inline-form-wrapper {
+        max-width: 98vw;
+    }
+    .wp-gpt-chatbot-inline-popup {
+        max-height: 60vw;
     }
 }
