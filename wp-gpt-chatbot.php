@@ -194,6 +194,7 @@ function wp_gpt_chatbot_shortcode($atts) {
             <button type="submit" class="wp-gpt-chatbot-inline-btn">Ask Us How &gt;</button>
         </form>
         <div class="wp-gpt-chatbot-inline-popup"></div>
+        <div class="wp-gpt-chatbot-pills-popup" style="display:none"></div>
     </div>
     <script>
     (function($){
@@ -201,8 +202,12 @@ function wp_gpt_chatbot_shortcode($atts) {
         var $form = $wrapper.find('.wp-gpt-chatbot-inline-form');
         var $input = $wrapper.find('.wp-gpt-chatbot-inline-input');
         var $popup = $wrapper.find('.wp-gpt-chatbot-inline-popup');
+        var $questionsBtn = $wrapper.find('.wp-gpt-chatbot-questions-btn');
+        var $pillsPopup = $wrapper.find('.wp-gpt-chatbot-pills-popup');
         var conversation = [];
         var welcomeMessage = <?php echo json_encode($atts['welcome_message']); ?>;
+        var chatOpen = false;
+
         function renderPopup(contentHtml, animateOpen = true) {
             $popup.html(
                 '<div class="wp-gpt-chatbot-popup-content">'+contentHtml+'</div>'+
@@ -215,9 +220,17 @@ function wp_gpt_chatbot_shortcode($atts) {
                 $popup.show();
                 requestAnimationFrame(function(){
                     $popup.addClass('open').removeClass('closing');
+                    // Scroll to bottom after animation
+                    setTimeout(function(){
+                        var $content = $popup.find('.wp-gpt-chatbot-popup-content');
+                        $content.scrollTop($content[0].scrollHeight);
+                    }, 350);
                 });
             } else {
                 $popup.show().addClass('open').removeClass('closing');
+                // Scroll to bottom immediately
+                var $content = $popup.find('.wp-gpt-chatbot-popup-content');
+                $content.scrollTop($content[0].scrollHeight);
             }
         }
 
@@ -229,6 +242,9 @@ function wp_gpt_chatbot_shortcode($atts) {
                     $container.html(text.substring(0, i).replace(/\n/g,'<br>'));
                     i++;
                     setTimeout(type, speed);
+                    // Scroll to bottom as message types
+                    var $content = $container.closest('.wp-gpt-chatbot-popup-content');
+                    $content.scrollTop($content[0].scrollHeight);
                 } else if (callback) {
                     callback();
                 }
@@ -281,6 +297,7 @@ function wp_gpt_chatbot_shortcode($atts) {
             $input.val('');
         });
         $wrapper.on('click','.wp-gpt-chatbot-popup-close',function(){
+            chatOpen = false;
             $popup.removeClass('open').addClass('closing');
             setTimeout(function(){ $popup.hide().removeClass('closing'); conversation = []; }, 400);
         });
@@ -298,26 +315,35 @@ function wp_gpt_chatbot_shortcode($atts) {
         if (placeholderSuggestions) {
             phrases = placeholderSuggestions.split(',').map(function(s){ return s.trim(); }).filter(Boolean);
             if (phrases.length > 0) {
-                // Add pill list container above the form
-                $pillList = $('<div class="wp-gpt-chatbot-pills-list" style="display:none"></div>');
+                var pillsShown = false;
+                // Build the popup pills list (hidden by default)
+                var pillsHtml = '<div class="wp-gpt-chatbot-pills-popup-inner">';
+                pillsHtml += '<div class="wp-gpt-chatbot-pills-heading">Common questions…</div>';
+                pillsHtml += '<div class="wp-gpt-chatbot-pills-list">';
                 phrases.forEach(function(phrase) {
-                    var $pill = $('<button type="button" class="wp-gpt-chatbot-pill"></button>').text(phrase);
-                    $pill.on('click', function() {
-                        $input.val(phrase).focus();
-                        $pillList.hide();
-                        $form.submit();
-                    });
-                    $pillList.append($pill);
+                    pillsHtml += '<button type="button" class="wp-gpt-chatbot-pill"><span>'+phrase+'</span><svg class="wp-gpt-chatbot-pill-send" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 15L15 9L3 3V7L11 9L3 11V15Z" fill="#FF9F00"/></svg></button>';
                 });
-                $wrapper.find('.wp-gpt-chatbot-inline-form').before($pillList);
-
-                // Show pills on input focus
+                pillsHtml += '</div></div>';
+                $pillsPopup.html(pillsHtml);
+                // Show/hide popup on input focus
                 $input.on('focus', function(){
-                    $pillList.fadeIn(120);
+                    if (!chatOpen && !pillsShown && $pillsPopup.children().length) {
+                        $pillsPopup.addClass('opening').css('display','block');
+                        setTimeout(function(){
+                            $pillsPopup.addClass('opening');
+                        }, 10); // ensure transition
+                        pillsShown = true;
+                    }
                 });
-                // Hide pills on blur (with slight delay to allow click)
                 $input.on('blur', function(){
-                    setTimeout(function(){ $pillList.fadeOut(120); }, 180);
+                    setTimeout(function(){ $pillsPopup.removeClass('opening').css('display','none'); }, 180);
+                });
+                // Send question on pill click
+                $pillsPopup.on('click', '.wp-gpt-chatbot-pill', function(){
+                    var phrase = $(this).find('span').text();
+                    $input.val(phrase).focus();
+                    $pillsPopup.hide();
+                    $form.submit();
                 });
             }
         }
@@ -357,12 +383,11 @@ function wp_gpt_chatbot_shortcode($atts) {
             typePlaceholder();
             $input.on('focus', function(){
                 input.setAttribute('placeholder', '');
+                placeholderAnimationActive = false;
+                clearTimeout(placeholderTimeout);
             });
             $input.on('blur', function(){
-                if (!placeholderAnimationActive) return;
-                charIndex = 0; typing = true;
-                phraseIndex = 0;
-                typePlaceholder();
+                // Do not restart placeholder animation after blur
             });
         }
         // Stop placeholder animation and set generic placeholder on question submit
@@ -370,6 +395,8 @@ function wp_gpt_chatbot_shortcode($atts) {
             placeholderAnimationActive = false;
             clearTimeout(placeholderTimeout);
             $input.attr('placeholder', 'What else is on your mind?');
+            chatOpen = true;
+            $pillsPopup.removeClass('opening').hide(); // Hide common questions popup on first submit
         });
     })(jQuery);
     </script>
