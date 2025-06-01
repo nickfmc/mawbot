@@ -327,7 +327,7 @@
     width: 100%;
 }
 .wp-gpt-chatbot-msg-user span {
-    background: linear-gradient(90deg, var(--wp-gpt-primary) 0%, #FF9F00 100%);
+    background:  #FF9F00;
     color: #243550;
     font-weight: 500;
     border-radius: 18px 18px 4px 18px;

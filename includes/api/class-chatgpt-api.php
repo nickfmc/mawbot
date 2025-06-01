@@ -63,7 +63,7 @@ class WP_GPT_Chatbot_API {
     }
     
     /**
-     * Get relevant training data for a query
+     * Get relevant training data for a query (improved: partial/fuzzy match, always include at least one website_content entry)
      * 
      * @param string $query The user's query
      * @return array Relevant training data entries
@@ -76,7 +76,6 @@ class WP_GPT_Chatbot_API {
         $stopwords = array('a', 'an', 'the', 'and', 'or', 'but', 'is', 'are', 'in', 'on', 'at', 'to', 'for', 'with', 'about', 'what', 'how', 'when', 'where', 'why', 'who', 'which');
         $words = explode(' ', $query);
         $keywords = array();
-        
         foreach ($words as $word) {
             $word = trim($word);
             if (!empty($word) && !in_array($word, $stopwords) && strlen($word) > 2) {
@@ -95,55 +94,64 @@ class WP_GPT_Chatbot_API {
             foreach ($this->training_data as $item) {
                 if (!isset($item['source_type']) || $item['source_type'] !== 'website_content') {
                     $manual_entries[] = $item;
-                    // Limit to 5 manual entries to save tokens
                     if (count($manual_entries) >= min(5, $context_limit / 3)) {
                         break;
                     }
                 }
             }
+            error_log('WP GPT Chatbot: [MATCH] No keywords, returning manual entries only: ' . count($manual_entries));
             return $manual_entries;
         }
         
-        // Score each training data entry
+        // Score each training data entry (improved: allow partial/substring match for website_content)
         $scored_entries = array();
-        
+        $website_candidates = array();
         foreach ($this->training_data as $index => $item) {
             $score = 0;
             $content = strtolower($item['question'] . ' ' . $item['answer']);
-            
             foreach ($keywords as $keyword) {
                 if (strpos($content, $keyword) !== false) {
                     $score += 1;
                 }
             }
-            
-            // Only include entries with at least one keyword match
+            // For website_content, also allow partial/substring/phrase match on the question
+            if (isset($item['source_type']) && $item['source_type'] === 'website_content') {
+                if (strpos($content, $query) !== false) {
+                    $score += 2; // Strong boost for phrase match
+                } elseif (similar_text($item['question'], $query, $percent) && $percent > 60) {
+                    $score += 1; // Fuzzy match
+                }
+                $website_candidates[] = array('item' => $item, 'score' => $score);
+            }
             if ($score > 0) {
-                $scored_entries[] = array(
-                    'item' => $item,
-                    'score' => $score
-                );
+                $scored_entries[] = array('item' => $item, 'score' => $score);
+            }
+        }
+        
+        // Always include at least one website_content entry if any exist and question is not empty
+        if (!empty($website_candidates)) {
+            usort($website_candidates, function($a, $b) { return $b['score'] - $a['score']; });
+            $top_website = $website_candidates[0]['item'];
+            $already_included = false;
+            foreach ($scored_entries as $entry) {
+                if ($entry['item'] === $top_website) { $already_included = true; break; }
+            }
+            if (!$already_included) {
+                array_unshift($scored_entries, array('item' => $top_website, 'score' => 99));
             }
         }
         
         // Sort by score (highest first)
-        usort($scored_entries, function($a, $b) {
-            return $b['score'] - $a['score'];
-        });
+        usort($scored_entries, function($a, $b) { return $b['score'] - $a['score']; });
         
         // Return top results (limiting to conserve tokens)
         $result = array();
         $manual_count = 0;
         $website_count = 0;
-        
-        // Calculate limits based on context_limit setting
-        $manual_limit = max(3, intval($context_limit * 0.3)); // 30% for manual entries
-        $website_limit = max(5, intval($context_limit * 0.7)); // 70% for website content
-        
+        $manual_limit = max(3, intval($context_limit * 0.3));
+        $website_limit = max(5, intval($context_limit * 0.7));
         foreach ($scored_entries as $entry) {
             $item = $entry['item'];
-            
-            // Limit to manual_limit manual entries and website_limit website content entries
             if (isset($item['source_type']) && $item['source_type'] === 'website_content') {
                 if ($website_count < $website_limit) {
                     $result[] = $item;
@@ -155,8 +163,6 @@ class WP_GPT_Chatbot_API {
                     $manual_count++;
                 }
             }
-            
-            // Stop once we have enough entries
             if ($manual_count >= $manual_limit && $website_count >= $website_limit) {
                 break;
             }
@@ -168,7 +174,6 @@ class WP_GPT_Chatbot_API {
             foreach ($this->training_data as $item) {
                 if (!isset($item['source_type']) || $item['source_type'] !== 'website_content') {
                     $manual_entries[] = $item;
-                    // Limit to 3 additional entries
                     if (count($manual_entries) >= 3) {
                         break;
                     }
@@ -177,92 +182,102 @@ class WP_GPT_Chatbot_API {
             $result = array_merge($result, $manual_entries);
         }
         
+        // Debug log which entries are being included
+        $log = array();
+        foreach ($result as $item) {
+            $log[] = ($item['source_type'] ?? 'manual') . ': ' . (mb_substr($item['question'],0,60));
+        }
+        error_log('WP GPT Chatbot: [MATCH] Included entries for "' . $query . '": ' . print_r($log, true));
         return $result;
     }
 
     /**
      * Generate training content from the saved Q&A pairs
-     * 
+     *
      * @param string $query Optional query to get relevant training data
      * @return string Formatted training content
      */
     private function generate_training_content($query = null) {
         $content = "";
-        
         if (empty($this->training_data)) {
             return $content;
         }
-        
-        // Get website content settings
         $settings = get_option('wp_gpt_chatbot_settings');
         $website_content_enabled = isset($settings['website_content']['enabled']) && $settings['website_content']['enabled'];
-        
-        // If we have a query and selective context is enabled, get relevant training data
-        if (!empty($query) && $this->selective_context && $website_content_enabled) {
+        $manual_pages = isset($settings['website_content']['manual_pages']) && is_array($settings['website_content']['manual_pages']) ? $settings['website_content']['manual_pages'] : array();
+        // Always use selective context if enabled, and always include manual_pages if set
+        if (!empty($query) && $this->selective_context) {
             $relevant_data = $this->get_relevant_training_data($query);
-            
             if (!empty($relevant_data)) {
                 $content .= "\n\n--- START OF YOUR COMPLETE KNOWLEDGE BASE ---\n\n";
-                
-                // Group data by source type
                 $manual_entries = array();
                 $website_entries = array();
-                
+                $manual_page_entries = array();
                 foreach ($relevant_data as $item) {
                     if (isset($item['source_type']) && $item['source_type'] === 'website_content') {
-                        $website_entries[] = $item;
+                        // If crawler is enabled, include all website_content; if disabled, only include if in manual_pages
+                        if ($website_content_enabled || (in_array($item['source_id'], $manual_pages))) {
+                            // If crawler is off, only include manual_pages
+                            if (!$website_content_enabled && !in_array($item['source_id'], $manual_pages)) continue;
+                            // Group for output
+                            if (in_array($item['source_id'], $manual_pages)) {
+                                $manual_page_entries[] = $item;
+                            } else {
+                                $website_entries[] = $item;
+                            }
+                        }
                     } else {
                         $manual_entries[] = $item;
                     }
                 }
-                
-                // Add manual entries first (they are typically more important)
+                // Add manual entries first
                 foreach ($manual_entries as $item) {
                     $content .= "Q: {$item['question']}\nA: {$item['answer']}\n\n";
                 }
-                
-                // Add website content entries
-                if (!empty($website_entries)) {
+                // Add manually included pages (when crawler is off)
+                if (!empty($manual_page_entries)) {
+                    $content .= "\n\nIncluded website pages:\n\n";
+                    foreach ($manual_page_entries as $item) {
+                        $content .= "Q: {$item['question']}\nA: {$item['answer']}\n\n";
+                    }
+                }
+                // Add website content entries (when crawler is on)
+                if ($website_content_enabled && !empty($website_entries)) {
                     $content .= "\n\nAdditional website information:\n\n";
-                    
                     foreach ($website_entries as $item) {
                         $content .= "Q: {$item['question']}\nA: {$item['answer']}\n\n";
                     }
                 }
-                
                 $content .= "--- END OF YOUR COMPLETE KNOWLEDGE BASE ---\n\n";
                 $content .= "REMINDER: You can ONLY answer questions using the information between the START and END markers above. Do not use any other knowledge.";
             } else {
-                // Add standard training content
+                // Fallback: add a limited subset of manual entries
                 $content .= "\n\n--- START OF YOUR COMPLETE KNOWLEDGE BASE ---\n\n";
-                
-                // Add a limited subset of manual entries
                 $count = 0;
                 foreach ($this->training_data as $item) {
                     if (!isset($item['source_type']) || $item['source_type'] !== 'website_content') {
                         $content .= "Q: {$item['question']}\nA: {$item['answer']}\n\n";
                         $count++;
-                        
-                        // Limit to 5 entries to save tokens
                         if ($count >= 5) {
                             break;
                         }
                     }
                 }
-                
                 $content .= "--- END OF YOUR COMPLETE KNOWLEDGE BASE ---\n\n";
                 $content .= "REMINDER: You can ONLY answer questions using the information between the START and END markers above. Do not use any other knowledge.";
             }
         } else {
-            // Without a query, just add all training data with clear boundaries
+            // No query: just add all manual and included website_content (if any)
             $content .= "\n\n--- START OF YOUR COMPLETE KNOWLEDGE BASE ---\n\n";
-            
             foreach ($this->training_data as $item) {
                 if (!isset($item['source_type']) || $item['source_type'] !== 'website_content') {
                     $content .= "Q: {$item['question']}\nA: {$item['answer']}\n\n";
+                } elseif (!$website_content_enabled && in_array($item['source_id'], $manual_pages)) {
+                    $content .= "Q: {$item['question']}\nA: {$item['answer']}\n\n";
+                } elseif ($website_content_enabled) {
+                    $content .= "Q: {$item['question']}\nA: {$item['answer']}\n\n";
                 }
             }
-            
             $content .= "--- END OF YOUR COMPLETE KNOWLEDGE BASE ---\n\n";
             $content .= "REMINDER: You can ONLY answer questions using the information between the START and END markers above. Do not use any other knowledge.";
         }
@@ -271,93 +286,20 @@ class WP_GPT_Chatbot_API {
     }
     
     /**
-     * Determine if the question should be classified as unknown
-     * This uses a simplified approach to save tokens
-     * 
+     * Determine if the question should be classified as unknown (lower threshold: only if no relevant entries)
+     *
      * @param string $question The user's question
      * @return bool Whether the question should be treated as unknown
      */
     private function is_unknown_question($question) {
-        // If no training data exists, we can't confidently answer anything specific
         if (empty($this->training_data)) {
             return true;
         }
-        
-        // First, check for very specific company/brand questions
-        $question_lower = strtolower($question);
-        
-        // Check for company-specific patterns that should be treated as unknown unless explicitly mentioned
-        $company_patterns = array(
-            '/what does ([a-zA-Z\s]+) communications? do/',
-            '/what is ([a-zA-Z\s]+) (company|corp|inc|ltd|llc)/',
-            '/who is ([a-zA-Z\s]+) (company|corp|inc|ltd|llc)/',
-            '/what does ([a-zA-Z\s]+) (company|corp|inc|ltd|llc) do/',
-            '/tell me about ([a-zA-Z\s]+) (company|corp|inc|ltd|llc)/',
-            '/what services does ([a-zA-Z\s]+) provide/',
-            '/what does ([a-zA-Z\s]+) specialize in/'
-        );
-        
-        foreach ($company_patterns as $pattern) {
-            if (preg_match($pattern, $question_lower, $matches)) {
-                // Extract the company name
-                $company_name = trim($matches[1]);
-                
-                // Debug logging
-                error_log('WP GPT Chatbot: Company pattern matched - Pattern: ' . $pattern . ', Company: ' . $company_name);
-                
-                // Check if this specific company is mentioned in our training data
-                $found_company = false;
-                foreach ($this->training_data as $item) {
-                    $training_text = strtolower($item['question'] . ' ' . $item['answer']);
-                    if (strpos($training_text, $company_name) !== false) {
-                        $found_company = true;
-                        error_log('WP GPT Chatbot: Company found in training data: ' . $company_name);
-                        break;
-                    }
-                }
-                
-                // If the specific company isn't in our training data, it's unknown
-                if (!$found_company) {
-                    error_log('WP GPT Chatbot: Company NOT found in training data, marking as unknown: ' . $company_name);
-                    return true;
-                }
-            }
-        }
-        
-        // Get relevant data to check if we have useful information
-        // Only use selective context if it's enabled in settings
-        $relevant_data = $this->selective_context ? 
-            $this->get_relevant_training_data($question) : 
-            $this->training_data;
-        
-        // Be more strict: require at least some reasonably relevant information
-        // If we have fewer than 2 relevant entries, consider it unknown
-        if (empty($relevant_data) || count($relevant_data) < 2) {
+        $relevant_data = $this->selective_context ? $this->get_relevant_training_data($question) : $this->training_data;
+        // Lower threshold: only unknown if no relevant entries at all
+        if (empty($relevant_data)) {
             return true;
         }
-        
-        // For questions with generic keywords that might match loosely, be more strict
-        $generic_keywords = array('what', 'does', 'do', 'company', 'business', 'services', 'provide', 'specialize');
-        $question_words = explode(' ', $question_lower);
-        $generic_word_count = 0;
-        $specific_word_count = 0;
-        
-        foreach ($question_words as $word) {
-            $word = trim($word, '.,?!');
-            if (strlen($word) > 2) {
-                if (in_array($word, $generic_keywords)) {
-                    $generic_word_count++;
-                } else {
-                    $specific_word_count++;
-                }
-            }
-        }
-        
-        // If the question is mostly generic words, require higher relevance
-        if ($generic_word_count >= $specific_word_count && count($relevant_data) < 3) {
-            return true;
-        }
-        
         return false;
     }
     
@@ -401,6 +343,7 @@ class WP_GPT_Chatbot_API {
         
         // Generate the full system prompt with relevant training data
         $full_prompt = $this->training_prompt . $this->generate_training_content($message);
+        error_log('WP GPT Chatbot: [DEBUG] Full prompt sent to OpenAI: ' . print_r($full_prompt, true));
         
         // Prepare the conversation messages
         $messages = array(
@@ -443,6 +386,8 @@ class WP_GPT_Chatbot_API {
         );
         
         $response = wp_remote_post($url, $args);
+        // Log the full API response for debugging
+        error_log('WP GPT Chatbot: [DEBUG] OpenAI API response: ' . print_r($response, true));
         
         if (is_wp_error($response)) {
             throw new Exception($response->get_error_message());
@@ -455,6 +400,13 @@ class WP_GPT_Chatbot_API {
         }
         
         $answer = $response_body['choices'][0]['message']['content'];
+        
+        // Fallback: If the answer is empty or only whitespace, treat as unknown
+        if (trim($answer) === '') {
+            error_log('WP GPT Chatbot: OpenAI API returned empty response, using unknown response fallback.');
+            WP_GPT_Chatbot_Database_Manager::log_unknown_question($message);
+            return $this->unknown_response;
+        }
         
         // Check if ChatGPT responded that it doesn't have the information
         // This catches cases where our keyword matching thought we had relevant data, but ChatGPT correctly identified it doesn't

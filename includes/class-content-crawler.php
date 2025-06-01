@@ -108,9 +108,11 @@ class WP_GPT_Chatbot_Content_Crawler {
      * 
      * @return array Result of the operation
      */
+    
     public function refresh_content() {
+        error_log('[MAWBOT] refresh_content() called');
         $settings = get_option('wp_gpt_chatbot_settings');
-        
+    
         // Check if website content settings exist
         if (!isset($settings['website_content']) || !is_array($settings['website_content'])) {
             return array(
@@ -119,135 +121,207 @@ class WP_GPT_Chatbot_Content_Crawler {
                 'count' => 0
             );
         }
-        
+    
         $content_settings = $settings['website_content'];
-        $enabled = isset($content_settings['enabled']) ? (bool) $content_settings['enabled'] : false;
-        
-        if (!$enabled) {
-            return array(
-                'success' => false,
-                'message' => 'Website content crawling is disabled',
-                'count' => 0
-            );
-        }
-        
-        // Get selected post types
-        $post_types = isset($content_settings['post_types']) && is_array($content_settings['post_types']) 
-            ? $content_settings['post_types'] 
-            : array('page');
-        
-        // Get selected categories
-        $categories = isset($content_settings['categories']) && is_array($content_settings['categories']) 
-            ? $content_settings['categories'] 
-            : array();
-        
-        // Get selected tags
-        $tags = isset($content_settings['tags']) && is_array($content_settings['tags']) 
-            ? $content_settings['tags'] 
-            : array();
-            
+    
+        // Initialize training data array
+        $training_data = array();
+        $processed_count = 0;
+    
         // Get excluded pages
         $excluded_pages = isset($content_settings['excluded_pages']) && is_array($content_settings['excluded_pages']) 
             ? $content_settings['excluded_pages'] 
             : array();
-        
-        // Initialize training data array
-        $training_data = array();
-        $processed_count = 0;
-        
-        // Process each post type separately to handle different taxonomies correctly
-        foreach ($post_types as $post_type) {
-            // Build query args for this post type
-            $args = array(
-                'post_type' => $post_type,
-                'post_status' => 'publish',
-                'posts_per_page' => -1, // Get all posts
-            );
-            
-            // Add category filter for post type that supports categories
-            if (!empty($categories) && $post_type === 'post') {
-                $args['category__in'] = $categories;
+    
+        // Always process manual pages
+        $manual_pages = isset($content_settings['manual_pages']) && is_array($content_settings['manual_pages'])
+            ? $content_settings['manual_pages']
+            : array();
+        error_log('[MAWBOT] Manual pages to process: ' . json_encode($manual_pages));
+        foreach ($manual_pages as $manual_id) {
+            error_log("[MAWBOT] Checking manual page $manual_id");
+            if (in_array($manual_id, $excluded_pages)) {
+                error_log("[MAWBOT] Manual page $manual_id skipped: in excluded_pages");
+                continue;
             }
-            
-            // Add tag filter for post type that supports tags
-            if (!empty($tags) && $post_type === 'post') {
-                $args['tag__in'] = $tags;
+            // Avoid duplicate processing if already included
+            $already_processed = false;
+            foreach ($training_data as $entry) {
+                if (isset($entry['source_id']) && $entry['source_id'] == $manual_id) {
+                    $already_processed = true;
+                    break;
+                }
             }
-            
-            // Add exclude filter if specified
-            if (!empty($excluded_pages)) {
-                $args['post__not_in'] = $excluded_pages;
+            if ($already_processed) {
+                error_log("[MAWBOT] Manual page $manual_id skipped: already processed");
+                continue;
             }
-            
-            // Apply filters for custom taxonomies
-            $args = apply_filters('wp_gpt_chatbot_content_query_args', $args, $post_type, $content_settings);
-            
-            // Get posts for this post type
-            $query = new WP_Query($args);
-            $posts = $query->posts;
-            
-            foreach ($posts as $post) {
-                // Skip if this page is excluded
-                if (in_array($post->ID, $excluded_pages)) {
-                    continue;
+            $post = get_post($manual_id);
+            if (!$post) {
+                error_log("[MAWBOT] Manual page $manual_id skipped: post not found");
+                continue;
+            }
+            if ($post->post_status !== 'publish') {
+                error_log("[MAWBOT] Manual page $manual_id skipped: not published (status: {$post->post_status})");
+                continue;
+            }
+            $content = wp_strip_all_tags(apply_filters('the_content', $post->post_content));
+            if (strlen($content) < 50) {
+                error_log("[MAWBOT] Manual page $manual_id skipped: content too short (" . strlen($content) . " chars)");
+                continue;
+            }
+            error_log("[MAWBOT] Manual page $manual_id INCLUDED: '{$post->post_title}' (" . strlen($content) . " chars)");
+    
+            $title = $post->post_title;
+            $url = get_permalink($post->ID);
+            $post_type_obj = get_post_type_object($post->post_type);
+            $post_type_name = $post_type_obj ? $post_type_obj->labels->singular_name : $post->post_type;
+            $source_info = "Source: {$title} ({$post_type_name}) | URL: {$url}";
+            $chunks = $this->split_content_into_chunks($content);
+            foreach ($chunks as $index => $chunk) {
+                $chunk_suffix = count($chunks) > 1 ? " (Part " . ($index + 1) . ")" : "";
+                $training_data[] = array(
+                    'question' => "What does the {$post_type_name} '{$title}'{$chunk_suffix} say?",
+                    'answer' => $chunk . "\n\n" . $source_info,
+                    'added_at' => current_time('mysql'),
+                    'source_type' => 'website_content',
+                    'source_id' => $post->ID,
+                    'source_url' => $url
+                );
+                $training_data[] = array(
+                    'question' => "What information is on {$url}{$chunk_suffix}?",
+                    'answer' => $chunk . "\n\n" . $source_info,
+                    'added_at' => current_time('mysql'),
+                    'source_type' => 'website_content',
+                    'source_id' => $post->ID,
+                    'source_url' => $url
+                );
+                $training_data[] = array(
+                    'question' => "Tell me about {$title}{$chunk_suffix}",
+                    'answer' => $chunk . "\n\n" . $source_info,
+                    'added_at' => current_time('mysql'),
+                    'source_type' => 'website_content',
+                    'source_id' => $post->ID,
+                    'source_url' => $url
+                );
+            }
+            $processed_count++;
+        }
+    
+        // Now check if content crawling is enabled for main crawl
+        $enabled = isset($content_settings['enabled']) ? (bool) $content_settings['enabled'] : false;
+    
+        if ($enabled) {
+            // Get selected post types
+            $post_types = isset($content_settings['post_types']) && is_array($content_settings['post_types']) 
+                ? $content_settings['post_types'] 
+                : array('page');
+    
+            // Get selected categories
+            $categories = isset($content_settings['categories']) && is_array($content_settings['categories']) 
+                ? $content_settings['categories'] 
+                : array();
+    
+            // Get selected tags
+            $tags = isset($content_settings['tags']) && is_array($content_settings['tags']) 
+                ? $content_settings['tags'] 
+                : array();
+    
+            // Process each post type separately to handle different taxonomies correctly
+            foreach ($post_types as $post_type) {
+                // Build query args for this post type
+                $args = array(
+                    'post_type' => $post_type,
+                    'post_status' => 'publish',
+                    'posts_per_page' => -1, // Get all posts
+                );
+    
+                // Add category filter for post type that supports categories
+                if (!empty($categories) && $post_type === 'post') {
+                    $args['category__in'] = $categories;
                 }
-                
-                // Get post content and clean it
-                $content = wp_strip_all_tags(apply_filters('the_content', $post->post_content));
-                $title = $post->post_title;
-                $url = get_permalink($post->ID);
-                $post_type_obj = get_post_type_object($post_type);
-                $post_type_name = $post_type_obj ? $post_type_obj->labels->singular_name : $post_type;
-                
-                // Skip if content is too short
-                if (strlen($content) < 50) {
-                    continue;
+    
+                // Add tag filter for post type that supports tags
+                if (!empty($tags) && $post_type === 'post') {
+                    $args['tag__in'] = $tags;
                 }
-                
-                // Format the source information
-                $source_info = "Source: {$title} ({$post_type_name}) | URL: {$url}";
-                
-                // Try to break content into logical chunks to avoid exceeding context limits
-                $chunks = $this->split_content_into_chunks($content);
-                
-                foreach ($chunks as $index => $chunk) {
-                    $chunk_suffix = count($chunks) > 1 ? " (Part " . ($index + 1) . ")" : "";
-                    
-                    // Create training data entries for each chunk
-                    $training_data[] = array(
-                        'question' => "What does the {$post_type_name} '{$title}'{$chunk_suffix} say?",
-                        'answer' => $chunk . "\n\n" . $source_info,
-                        'added_at' => current_time('mysql'),
-                        'source_type' => 'website_content',
-                        'source_id' => $post->ID,
-                        'source_url' => $url
-                    );
-                    
-                    // Also add a variant with URL
-                    $training_data[] = array(
-                        'question' => "What information is on {$url}{$chunk_suffix}?",
-                        'answer' => $chunk . "\n\n" . $source_info,
-                        'added_at' => current_time('mysql'),
-                        'source_type' => 'website_content',
-                        'source_id' => $post->ID,
-                        'source_url' => $url
-                    );
-                    
-                    // Add questions based on page title
-                    $training_data[] = array(
-                        'question' => "Tell me about {$title}{$chunk_suffix}",
-                        'answer' => $chunk . "\n\n" . $source_info,
-                        'added_at' => current_time('mysql'),
-                        'source_type' => 'website_content',
-                        'source_id' => $post->ID,
-                        'source_url' => $url
-                    );
+    
+                // Add exclude filter if specified
+                if (!empty($excluded_pages)) {
+                    $args['post__not_in'] = $excluded_pages;
                 }
-                
-                $processed_count++;
+    
+                // Apply filters for custom taxonomies
+                $args = apply_filters('wp_gpt_chatbot_content_query_args', $args, $post_type, $content_settings);
+    
+                // Get posts for this post type
+                $query = new WP_Query($args);
+                $posts = $query->posts;
+    
+                foreach ($posts as $post) {
+                    // Skip if this page is excluded
+                    if (in_array($post->ID, $excluded_pages)) {
+                        continue;
+                    }
+    
+                    // Get post content and clean it
+                    $content = wp_strip_all_tags(apply_filters('the_content', $post->post_content));
+                    $title = $post->post_title;
+                    $url = get_permalink($post->ID);
+                    $post_type_obj = get_post_type_object($post_type);
+                    $post_type_name = $post_type_obj ? $post_type_obj->labels->singular_name : $post_type;
+    
+                    // Skip if content is too short
+                    if (strlen($content) < 50) {
+                        continue;
+                    }
+    
+                    // Format the source information
+                    $source_info = "Source: {$title} ({$post_type_name}) | URL: {$url}";
+    
+                    // Try to break content into logical chunks to avoid exceeding context limits
+                    $chunks = $this->split_content_into_chunks($content);
+    
+                    foreach ($chunks as $index => $chunk) {
+                        $chunk_suffix = count($chunks) > 1 ? " (Part " . ($index + 1) . ")" : "";
+    
+                        // Create training data entries for each chunk
+                        $training_data[] = array(
+                            'question' => "What does the {$post_type_name} '{$title}'{$chunk_suffix} say?",
+                            'answer' => $chunk . "\n\n" . $source_info,
+                            'added_at' => current_time('mysql'),
+                            'source_type' => 'website_content',
+                            'source_id' => $post->ID,
+                            'source_url' => $url
+                        );
+    
+                        // Also add a variant with URL
+                        $training_data[] = array(
+                            'question' => "What information is on {$url}{$chunk_suffix}?",
+                            'answer' => $chunk . "\n\n" . $source_info,
+                            'added_at' => current_time('mysql'),
+                            'source_type' => 'website_content',
+                            'source_id' => $post->ID,
+                            'source_url' => $url
+                        );
+    
+                        // Add questions based on page title
+                        $training_data[] = array(
+                            'question' => "Tell me about {$title}{$chunk_suffix}",
+                            'answer' => $chunk . "\n\n" . $source_info,
+                            'added_at' => current_time('mysql'),
+                            'source_type' => 'website_content',
+                            'source_id' => $post->ID,
+                            'source_url' => $url
+                        );
+                    }
+    
+                    $processed_count++;
+                }
             }
         }
-        
+    
+        // Now check if we have any training data
         if (empty($training_data)) {
             return array(
                 'success' => false,
@@ -255,17 +329,19 @@ class WP_GPT_Chatbot_Content_Crawler {
                 'count' => 0
             );
         }
-        
+    
         // Update settings with new website content training data
         $this->update_website_training_data($training_data);
-        
+    
+        // At the end of refresh_content(), after updating training data
+        error_log('[MAWBOT] SAVED TRAINING DATA: ' . print_r(get_option('wp_gpt_chatbot_settings'), true));
+    
         return array(
             'success' => true,
             'message' => "Successfully processed {$processed_count} pages/posts and created " . count($training_data) . " training entries",
             'count' => count($training_data)
         );
     }
-    
     /**
      * Split content into manageable chunks
      * 

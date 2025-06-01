@@ -114,85 +114,58 @@ class WP_GPT_Chatbot_Admin_Settings {
     
     public function validate_settings($input) {
         global $wpdb;
-        
-        // Get current settings to preserve training_data - bypass cache by getting directly from database
+        // Get current settings to preserve all sections
         $option_name = 'wp_gpt_chatbot_settings';
         $row = $wpdb->get_row($wpdb->prepare("SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1", $option_name));
         $current_settings = $row ? maybe_unserialize($row->option_value) : array();
-        
         if (!is_array($current_settings)) {
             $current_settings = array();
         }
-        
-        // Sanitize each setting
-        $output = array();
-        $output['api_key'] = isset($input['api_key']) ? sanitize_text_field($input['api_key']) : '';
-        $output['model'] = isset($input['model']) ? sanitize_text_field($input['model']) : 'gpt-4.1-nano';
-        $output['training_prompt'] = isset($input['training_prompt']) ? sanitize_textarea_field($input['training_prompt']) : '';
-        $output['unknown_response'] = isset($input['unknown_response']) ? sanitize_textarea_field($input['unknown_response']) : '';
-        $output['primary_color'] = isset($input['primary_color']) ? sanitize_hex_color($input['primary_color']) : '#007bff';
-        $output['secondary_color'] = isset($input['secondary_color']) ? sanitize_hex_color($input['secondary_color']) : '#ffffff';
-        $output['bot_name'] = isset($input['bot_name']) ? sanitize_text_field($input['bot_name']) : '';
-        $output['position'] = isset($input['position']) ? sanitize_text_field($input['position']) : 'bottom-right';
-        if (!in_array($output['position'], array('bottom-right', 'bottom-left', 'none'))) {
-            $output['position'] = 'bottom-right';
+
+        // Start with all current settings, then overwrite with new input
+        $output = $current_settings;
+
+        // Overwrite/merge each known section if present in input
+        if (isset($input['api_key'])) $output['api_key'] = sanitize_text_field($input['api_key']);
+        if (isset($input['model'])) $output['model'] = sanitize_text_field($input['model']);
+        if (isset($input['training_prompt'])) $output['training_prompt'] = sanitize_textarea_field($input['training_prompt']);
+        if (isset($input['unknown_response'])) $output['unknown_response'] = sanitize_textarea_field($input['unknown_response']);
+        if (isset($input['primary_color'])) $output['primary_color'] = sanitize_hex_color($input['primary_color']);
+        if (isset($input['secondary_color'])) $output['secondary_color'] = sanitize_hex_color($input['secondary_color']);
+        if (isset($input['bot_name'])) $output['bot_name'] = sanitize_text_field($input['bot_name']);
+        if (isset($input['position'])) {
+            $output['position'] = sanitize_text_field($input['position']);
+            if (!in_array($output['position'], array('bottom-right', 'bottom-left', 'none'))) {
+                $output['position'] = 'bottom-right';
+            }
         }
-        $output['welcome_message'] = isset($input['welcome_message']) ? sanitize_text_field($input['welcome_message']) : '';
-        
-        // Process token optimization settings
-        $output['enable_caching'] = isset($input['enable_caching']) ? (bool) $input['enable_caching'] : false;
-        $output['cache_expiration'] = isset($input['cache_expiration']) ? absint($input['cache_expiration']) : 604800; // Default: 1 week
-        $output['conversation_memory'] = isset($input['conversation_memory']) ? 
-            max(1, min(20, absint($input['conversation_memory']))) : 5; // Between 1-20, default 5
-        $output['selective_context'] = isset($input['selective_context']) ? (bool) $input['selective_context'] : true;
-        
-        // Process website content settings
+        if (isset($input['welcome_message'])) $output['welcome_message'] = sanitize_text_field($input['welcome_message']);
+        if (isset($input['enable_caching'])) $output['enable_caching'] = (bool) $input['enable_caching'];
+        if (isset($input['cache_expiration'])) $output['cache_expiration'] = absint($input['cache_expiration']);
+        if (isset($input['conversation_memory'])) $output['conversation_memory'] = max(1, min(20, absint($input['conversation_memory'])));
+        if (isset($input['selective_context'])) $output['selective_context'] = (bool) $input['selective_context'];
+
+        // Website content section
         if (isset($input['website_content']) && is_array($input['website_content'])) {
-            $output['website_content'] = array();
+            $output['website_content'] = isset($output['website_content']) && is_array($output['website_content']) ? $output['website_content'] : array();
             $output['website_content']['enabled'] = isset($input['website_content']['enabled']) ? (bool) $input['website_content']['enabled'] : false;
-            
-            // Post types
-            if (isset($input['website_content']['post_types']) && is_array($input['website_content']['post_types'])) {
-                $output['website_content']['post_types'] = array_map('sanitize_text_field', $input['website_content']['post_types']);
-            } else {
-                $output['website_content']['post_types'] = array('page');
-            }
-            
-            // Categories
-            if (isset($input['website_content']['categories']) && is_array($input['website_content']['categories'])) {
-                $output['website_content']['categories'] = array_map('intval', $input['website_content']['categories']);
-            } else {
-                $output['website_content']['categories'] = array();
-            }
-            
-            // Tags
-            if (isset($input['website_content']['tags']) && is_array($input['website_content']['tags'])) {
-                $output['website_content']['tags'] = array_map('intval', $input['website_content']['tags']);
-            } else {
-                $output['website_content']['tags'] = array();
-            }
-            
-            // Excluded pages
-            if (isset($input['website_content']['excluded_pages']) && is_array($input['website_content']['excluded_pages'])) {
-                $output['website_content']['excluded_pages'] = array_map('intval', $input['website_content']['excluded_pages']);
-            } else {
-                $output['website_content']['excluded_pages'] = array();
-            }
-        } else {
-            // Preserve existing website content settings if present
-            $output['website_content'] = isset($current_settings['website_content']) ? $current_settings['website_content'] : array();
+            $output['website_content']['auto_refresh'] = isset($input['website_content']['auto_refresh']) ? (bool) $input['website_content']['auto_refresh'] : false;
+            $output['website_content']['refresh_frequency'] = isset($input['website_content']['refresh_frequency']) ? sanitize_text_field($input['website_content']['refresh_frequency']) : 'daily';
+            $output['website_content']['post_types'] = isset($input['website_content']['post_types']) && is_array($input['website_content']['post_types']) ? array_map('sanitize_text_field', $input['website_content']['post_types']) : array('page');
+            $output['website_content']['categories'] = isset($input['website_content']['categories']) && is_array($input['website_content']['categories']) ? array_map('intval', $input['website_content']['categories']) : array();
+            $output['website_content']['tags'] = isset($input['website_content']['tags']) && is_array($input['website_content']['tags']) ? array_map('intval', $input['website_content']['tags']) : array();
+            $output['website_content']['excluded_pages'] = isset($input['website_content']['excluded_pages']) && is_array($input['website_content']['excluded_pages']) ? array_map('intval', $input['website_content']['excluded_pages']) : array();
+            // Manually included pages
+            $output['website_content']['manual_pages'] = isset($input['website_content']['manual_pages']) && is_array($input['website_content']['manual_pages']) ? array_map('intval', $input['website_content']['manual_pages']) : array();
         }
-        
+
         // Merge new training_data from settings form (if present) with latest from DB
         $db_training_data = (isset($current_settings['training_data']) && is_array($current_settings['training_data']))
             ? $current_settings['training_data'] : array();
         $input_training_data = (isset($input['training_data']) && is_array($input['training_data']))
             ? $input['training_data'] : array();
-
-        // Merge: DB data comes first, then any new/updated entries from form (avoid duplicates)
         $merged_training_data = $db_training_data;
         foreach ($input_training_data as $item) {
-            // Only add if not already present (by question/answer)
             $exists = false;
             foreach ($db_training_data as $existing) {
                 if (
@@ -207,18 +180,13 @@ class WP_GPT_Chatbot_Admin_Settings {
                 $merged_training_data[] = $item;
             }
         }
-        // Debug output
-        error_log('GPT Chatbot validate_settings - merged training_data: ' . print_r($merged_training_data, true));
         $output['training_data'] = $merged_training_data;
-        
-        // Validate and save the new placeholder_suggestions field
+
         if (isset($input['placeholder_suggestions'])) {
             $output['placeholder_suggestions'] = sanitize_text_field($input['placeholder_suggestions']);
         }
-        
-        // Apply filters for extensions
+
         $output = apply_filters('wp_gpt_chatbot_validate_settings', $output, $input);
-        
         return $output;
     }
     

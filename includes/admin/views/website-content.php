@@ -30,6 +30,9 @@ $selected_tags = isset($content_settings['tags']) && is_array($content_settings[
 $excluded_pages = isset($content_settings['excluded_pages']) && is_array($content_settings['excluded_pages']) 
     ? $content_settings['excluded_pages'] 
     : array();
+$manual_pages = isset($content_settings['manual_pages']) && is_array($content_settings['manual_pages']) 
+    ? $content_settings['manual_pages'] 
+    : array();
 
 // Get all available post types
 $post_types = WP_GPT_Chatbot_Content_Crawler::get_available_post_types();
@@ -210,6 +213,44 @@ if (isset($settings['training_data']) && is_array($settings['training_data'])) {
                         </div>
                     </td>
                 </tr>
+                
+                <tr>
+                    <th scope="row">
+                        <label for="manual-pages-search"><?php echo esc_html__('Manually Included Pages', 'wp-gpt-chatbot'); ?></label>
+                    </th>
+                    <td>
+                        <div class="wp-gpt-chatbot-manual-pages">
+                            <div class="manual-pages-search-container">
+                                <input type="text" id="manual-pages-search" placeholder="<?php echo esc_attr__('Search pages by title...', 'wp-gpt-chatbot'); ?>" class="regular-text">
+                                <div id="manual-pages-results" class="manual-pages-results"></div>
+                            </div>
+                            <div class="manual-pages-list">
+                                <p><?php echo esc_html__('Selected pages to add to the knowledgebase:', 'wp-gpt-chatbot'); ?></p>
+                                <ul id="manual-pages-list">
+                                    <?php 
+                                    if (!empty($manual_pages)) {
+                                        foreach ($manual_pages as $page_id) {
+                                            $page = get_post($page_id);
+                                            if ($page) {
+                                                echo '<li data-id="' . esc_attr($page_id) . '">' . esc_html($page->post_title) . ' <a href="#" class="remove-manual-page">×</a>';
+                                                echo '<input type="hidden" name="wp_gpt_chatbot_settings[website_content][manual_pages][]" value="' . esc_attr($page_id) . '">';
+                                                echo '</li>';
+                                            }
+                                        }
+                                    }
+                                    ?>
+                                </ul>
+                            </div>
+                            <p class="description"><?php echo esc_html__('Manually add specific pages to the chatbot knowledgebase. These will be included even if the Content Crawler is disabled.', 'wp-gpt-chatbot'); ?></p>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <button id="wp-gpt-chatbot-refresh-content" class="button button-primary">Refresh Website Content Now</button>
+<div id="wp-gpt-chatbot-refresh-status"></div>
+                    </td>
+                </tr>
             </table>
             
             <p>
@@ -259,12 +300,14 @@ if (isset($settings['training_data']) && is_array($settings['training_data'])) {
         }
     }
     
-    .excluded-pages-search-container {
+    .excluded-pages-search-container,
+    .manual-pages-search-container {
         position: relative;
         margin-bottom: 10px;
     }
     
-    .excluded-pages-results {
+    .excluded-pages-results,
+    .manual-pages-results {
         position: absolute;
         width: 100%;
         max-height: 200px;
@@ -275,21 +318,25 @@ if (isset($settings['training_data']) && is_array($settings['training_data'])) {
         display: none;
     }
     
-    .excluded-pages-results .result-item {
+    .excluded-pages-results .result-item,
+    .manual-pages-results .result-item {
         padding: 8px 10px;
         cursor: pointer;
         border-bottom: 1px solid #f0f0f0;
     }
     
-    .excluded-pages-results .result-item:hover {
+    .excluded-pages-results .result-item:hover,
+    .manual-pages-results .result-item:hover {
         background-color: #f5f5f5;
     }
     
-    #excluded-pages-list {
+    #excluded-pages-list,
+    #manual-pages-list {
         margin: 0;
     }
     
-    #excluded-pages-list li {
+    #excluded-pages-list li,
+    #manual-pages-list li {
         margin: 5px 0;
         padding: 5px 10px;
         background: #f5f5f5;
@@ -300,7 +347,8 @@ if (isset($settings['training_data']) && is_array($settings['training_data'])) {
         align-items: center;
     }
     
-    .remove-excluded-page {
+    .remove-excluded-page,
+    .remove-manual-page {
         color: #a00;
         text-decoration: none;
         font-weight: bold;
@@ -388,11 +436,78 @@ jQuery(document).ready(function($) {
         $results.show();
     }
     
-    // Handle result item click
-    $(document).on('click', '.result-item', function() {
+    // Manual pages search functionality
+    var manualSearchTimeout;
+    $('#manual-pages-search').on('keyup', function() {
+        var query = $(this).val();
+        clearTimeout(manualSearchTimeout);
+        if (query.length < 2) {
+            $('#manual-pages-results').hide();
+            return;
+        }
+        manualSearchTimeout = setTimeout(function() {
+            $.ajax({
+                url: ajaxurl,
+                type: 'GET',
+                data: {
+                    action: 'wp_gpt_chatbot_search_pages',
+                    query: query,
+                    nonce: '<?php echo wp_create_nonce('wp_gpt_chatbot_search_nonce'); ?>'
+                },
+                success: function(response) {
+                    if (response.success) {
+                        renderManualPagesResults(response.data);
+                    }
+                }
+            });
+        }, 300);
+    });
+
+        $('#wp-gpt-chatbot-refresh-content').on('click', function(e) {
+        e.preventDefault();
+        var $btn = $(this);
+        var $status = $('#wp-gpt-chatbot-refresh-status');
+        $btn.prop('disabled', true);
+        $status.text('Refreshing...');
+        $.post(ajaxurl, {
+            action: 'wp_gpt_chatbot_refresh_content',
+            nonce: '<?php echo wp_create_nonce('wp_gpt_chatbot_nonce'); ?>'
+        }, function(response) {
+            $btn.prop('disabled', false);
+            if (response.success) {
+                $status.text(response.data.message + ' (' + response.data.count + ' entries)');
+            } else {
+                $status.text('Error: ' + (response.data && response.data.message ? response.data.message : 'Unknown error'));
+            }
+        });
+    });
+    
+    function renderManualPagesResults(results) {
+        var $results = $('#manual-pages-results');
+        $results.empty();
+        
+        if (results.length === 0) {
+            $results.append('<div class="result-item">No pages found</div>');
+        } else {
+            $.each(results, function(index, page) {
+                // Skip if already in manual list
+                if ($('#manual-pages-list li[data-id="' + page.id + '"]').length === 0) {
+                    $results.append('<div class="result-item" data-id="' + page.id + '" data-title="' + page.title + '">' + page.title + '</div>');
+                }
+            });
+        }
+        
+        $results.show();
+    }
+    
+    // Handle result item click for excluded pages only
+    $(document).on('click', '#excluded-pages-results .result-item', function() {
         var pageId = $(this).data('id');
         var pageTitle = $(this).data('title');
-        
+        // Prevent adding if already in manual list
+        if ($('#manual-pages-list li[data-id="' + pageId + '"]').length > 0) {
+            return;
+        }
         // Add to excluded pages list
         if (pageId && pageTitle) {
             $('#excluded-pages-list').append(
@@ -401,10 +516,29 @@ jQuery(document).ready(function($) {
                 '</li>'
             );
         }
-        
         // Clear search
         $('#excluded-pages-search').val('');
         $('#excluded-pages-results').hide();
+    });
+    // Handle result item click for manual pages only
+    $(document).on('click', '#manual-pages-results .result-item', function() {
+        var pageId = $(this).data('id');
+        var pageTitle = $(this).data('title');
+        // Prevent adding if already in excluded list
+        if ($('#excluded-pages-list li[data-id="' + pageId + '"]').length > 0) {
+            return;
+        }
+        // Add to manual pages list
+        if (pageId && pageTitle) {
+            $('#manual-pages-list').append(
+                '<li data-id="' + pageId + '">' + pageTitle + ' <a href="#" class="remove-manual-page">×</a>' +
+                '<input type="hidden" name="wp_gpt_chatbot_settings[website_content][manual_pages][]" value="' + pageId + '">' +
+                '</li>'
+            );
+        }
+        // Clear search
+        $('#manual-pages-search').val('');
+        $('#manual-pages-results').hide();
     });
     
     // Handle remove excluded page
@@ -413,10 +547,23 @@ jQuery(document).ready(function($) {
         $(this).parent().remove();
     });
     
-    // Handle clicking outside of search results
+    // Handle remove manual page
+    $(document).on('click', '.remove-manual-page', function(e) {
+        e.preventDefault();
+        $(this).parent().remove();
+    });
+    
+    // Hide excluded search results when clicking outside
     $(document).on('click', function(e) {
         if (!$(e.target).closest('.excluded-pages-search-container').length) {
             $('#excluded-pages-results').hide();
+        }
+    });
+    
+    // Hide manual search results when clicking outside
+    $(document).on('click', function(e) {
+        if (!$(e.target).closest('.manual-pages-search-container').length) {
+            $('#manual-pages-results').hide();
         }
     });
     
