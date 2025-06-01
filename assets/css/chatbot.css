@@ -326,7 +326,7 @@
     justify-content: flex-end;
     width: 100%;
 }
-.wp-gpt-chatbot-msg-user span {
+.wp-gpt-chatbot-msg-user span { 
     background:  #FF9F00;
     color: #243550;
     font-weight: 500;

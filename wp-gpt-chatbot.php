@@ -35,16 +35,7 @@ function wp_gpt_chatbot_activate() {
         $default_settings = array(
             'api_key' => '',
             'model' => 'gpt-4.1-nano',
-            'training_prompt' => 'CRITICAL INSTRUCTIONS: You are a chatbot that can ONLY answer questions using the specific training data provided below. You are FORBIDDEN from using any general AI knowledge, including information about famous people, technology, or any other topics not explicitly provided in your training data. 
-
-STRICT RULES:
-1. ONLY use information from the Q&A pairs provided in your training data
-2. If a question is not directly answered in your training data, you MUST respond with: "I don\'t have that specific information in my knowledge base. Please contact us directly for assistance."
-3. Do NOT provide general knowledge answers about famous people, historical figures, or any other topics
-4. Do NOT make up or infer answers that aren\'t explicitly in your training data
-5. Stay strictly within the boundaries of your provided training material
-
-You must follow these rules without exception.',
+            'training_prompt' => 'CRITICAL INSTRUCTIONS: You are a chatbot that can ONLY answer questions using the specific training data and website content provided below. You are FORBIDDEN from using any general AI knowledge, including information about famous people, technology, or any other topics not explicitly provided in your training data or included website content.\n\nUPDATED RULES:\n1. You may use information from Q&A pairs AND from any included website content (including manually included pages), even if the content is not in Q&A format.\n2. You may summarize, paraphrase, or synthesize answers using the provided website content, as long as the answer is accurate and based on the included material.\n3. If a question cannot be answered using the provided training data or included website content, you MUST respond with: "I don\'t have that specific information in my knowledge base. Please contact us directly for assistance."\n4. Do NOT provide general knowledge answers about famous people, historical figures, or any other topics not in your knowledge base.\n5. Do NOT make up or infer answers that aren\'t supported by the provided training data or included website content.\n6. Always prioritize accuracy and clarity, and stay strictly within the boundaries of your provided training material and included website content.\n\nYou must follow these rules without exception.',
             'unknown_response' => 'I don\'t have that specific information in my knowledge base. I can only answer questions based on the training data I\'ve been provided. Please contact us directly for assistance with questions outside my scope.',
             'primary_color' => '#007bff',
             'secondary_color' => '#ffffff',
@@ -212,7 +203,7 @@ function wp_gpt_chatbot_shortcode($atts) {
             $popup.html(
                 '<div class="wp-gpt-chatbot-popup-content">'+contentHtml+'</div>'+
                 '<div class="wp-gpt-chatbot-popup-actions">'+
-                    '<button type="button" class="wp-gpt-chatbot-popup-human">Contact a Human</button>'+
+                    '<button type="button" class="wp-gpt-chatbot-popup-human" onclick="window.location.href=\'/contact\'">Contact a Human</button>'+
                     '<button type="button" class="wp-gpt-chatbot-popup-close" aria-label="Close"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 4L14 14M14 4L4 14" stroke="#243550" stroke-width="2" stroke-linecap="round"/></svg></button>'+
                 '</div>'
             );
@@ -302,7 +293,7 @@ function wp_gpt_chatbot_shortcode($atts) {
             setTimeout(function(){ $popup.hide().removeClass('closing'); conversation = []; }, 400);
         });
         $wrapper.on('click','.wp-gpt-chatbot-popup-human',function(){
-            $popup.append('<div class="wp-gpt-chatbot-human-msg">A human support agent will contact you soon. (You can customize this action.)</div>');
+            $popup.append('');
         });
         $input.on('focus',function(){
             // Do not hide popup on focus anymore
