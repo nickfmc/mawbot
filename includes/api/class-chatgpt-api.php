@@ -32,8 +32,6 @@ class WP_GPT_Chatbot_API {
         $this->conversation_memory = isset($settings['conversation_memory']) ? (int)$settings['conversation_memory'] : 5;
         $this->selective_context = isset($settings['selective_context']) ? (bool)$settings['selective_context'] : true;
         
-        // Debug: Log the unknown response value
-        error_log('WP GPT Chatbot: Constructor - Unknown response value: "' . $this->unknown_response . '"');
         
         // Add AJAX handlers
         add_action('wp_ajax_wp_gpt_chatbot_send_message', array($this, 'handle_chat_request'));
@@ -53,8 +51,7 @@ class WP_GPT_Chatbot_API {
         
         try {
             $response = $this->send_to_chatgpt($message, $conversation_history);
-            error_log('WP GPT Chatbot: Final response before sending to frontend: "' . $response . '"');
-            wp_send_json_success(array('message' => $response));
+                wp_send_json_success(array('message' => $response));
         } catch (Exception $e) {
             wp_send_json_error(array('message' => $e->getMessage()));
         }
@@ -99,10 +96,9 @@ class WP_GPT_Chatbot_API {
                     }
                 }
             }
-            error_log('WP GPT Chatbot: [MATCH] No keywords, returning manual entries only: ' . count($manual_entries));
             return $manual_entries;
         }
-        
+
         // Score each training data entry (improved: allow partial/substring match for website_content)
         $scored_entries = array();
         $website_candidates = array();
@@ -187,7 +183,7 @@ class WP_GPT_Chatbot_API {
         foreach ($result as $item) {
             $log[] = ($item['source_type'] ?? 'manual') . ': ' . (mb_substr($item['question'],0,60));
         }
-        error_log('WP GPT Chatbot: [MATCH] Included entries for "' . $query . '": ' . print_r($log, true));
+        
         return $result;
     }
 
@@ -316,7 +312,7 @@ class WP_GPT_Chatbot_API {
         $cached_response = WP_GPT_Chatbot_Cache_Manager::get_cached_response($message);
         
         if ($cached_response !== false) {
-            error_log('WP GPT Chatbot: Returning cached response: "' . $cached_response . '"');
+            // error_log('WP GPT Chatbot: Returning cached response: "' . $cached_response . '"');
             return $cached_response;
         }
         
@@ -326,14 +322,11 @@ class WP_GPT_Chatbot_API {
         if ($is_unknown) {
             // Log the unknown question to the database
             WP_GPT_Chatbot_Database_Manager::log_unknown_question($message);
-            
             // Debug: Log the unknown response value
-            error_log('WP GPT Chatbot: Unknown question detected: ' . $message);
-            error_log('WP GPT Chatbot: Unknown response: ' . $this->unknown_response);
-            
+            // error_log('WP GPT Chatbot: Unknown question detected: ' . $message);
+            // error_log('WP GPT Chatbot: Unknown response: ' . $this->unknown_response);
             // Ensure we have a fallback response if the setting is empty
             $response = !empty($this->unknown_response) ? $this->unknown_response : 'I don\'t have that specific information in my knowledge base. Please contact us directly for assistance.';
-            
             // Return the unknown question response
             return $response;
         }
@@ -343,7 +336,7 @@ class WP_GPT_Chatbot_API {
         
         // Generate the full system prompt with relevant training data
         $full_prompt = $this->training_prompt . $this->generate_training_content($message);
-        error_log('WP GPT Chatbot: [DEBUG] Full prompt sent to OpenAI: ' . print_r($full_prompt, true));
+        // error_log('WP GPT Chatbot: [DEBUG] Full prompt sent to OpenAI: ' . print_r($full_prompt, true));
         
         // Prepare the conversation messages
         $messages = array(
@@ -387,7 +380,7 @@ class WP_GPT_Chatbot_API {
         
         $response = wp_remote_post($url, $args);
         // Log the full API response for debugging
-        error_log('WP GPT Chatbot: [DEBUG] OpenAI API response: ' . print_r($response, true));
+        // error_log('WP GPT Chatbot: [DEBUG] OpenAI API response: ' . print_r($response, true));
         
         if (is_wp_error($response)) {
             throw new Exception($response->get_error_message());
@@ -403,7 +396,7 @@ class WP_GPT_Chatbot_API {
         
         // Fallback: If the answer is empty or only whitespace, treat as unknown
         if (trim($answer) === '') {
-            error_log('WP GPT Chatbot: OpenAI API returned empty response, using unknown response fallback.');
+            // error_log('WP GPT Chatbot: OpenAI API returned empty response, using unknown response fallback.');
             WP_GPT_Chatbot_Database_Manager::log_unknown_question($message);
             return $this->unknown_response;
         }

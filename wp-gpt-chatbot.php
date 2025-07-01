@@ -1,11 +1,11 @@
 <?php
 /**
- * Plugin Name: WP GPT Chatbot
+ * Plugin Name: MAWBOT - Custom Chatbot with ChatGPT API
  * Plugin URI: https://example.com/wp-gpt-chatbot
  * Description: A WordPress plugin that creates a custom chatbot using the ChatGPT API with your own training material.
  * Version: 1.0.0
- * Author: Your Name
- * Author URI: https://example.com
+ * Author: Nick Murray
+ * Author URI: https://mountainairweb.com
  * Text Domain: wp-gpt-chatbot
  * License: GPL-2.0+
  */

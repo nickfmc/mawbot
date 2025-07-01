@@ -110,7 +110,7 @@ class WP_GPT_Chatbot_Content_Crawler {
      */
     
     public function refresh_content() {
-        error_log('[MAWBOT] refresh_content() called');
+   
         $settings = get_option('wp_gpt_chatbot_settings');
     
         // Check if website content settings exist
@@ -137,11 +137,11 @@ class WP_GPT_Chatbot_Content_Crawler {
         $manual_pages = isset($content_settings['manual_pages']) && is_array($content_settings['manual_pages'])
             ? $content_settings['manual_pages']
             : array();
-        error_log('[MAWBOT] Manual pages to process: ' . json_encode($manual_pages));
+   
         foreach ($manual_pages as $manual_id) {
-            error_log("[MAWBOT] Checking manual page $manual_id");
+        
             if (in_array($manual_id, $excluded_pages)) {
-                error_log("[MAWBOT] Manual page $manual_id skipped: in excluded_pages");
+       
                 continue;
             }
             // Avoid duplicate processing if already included
@@ -153,24 +153,20 @@ class WP_GPT_Chatbot_Content_Crawler {
                 }
             }
             if ($already_processed) {
-                error_log("[MAWBOT] Manual page $manual_id skipped: already processed");
+       
                 continue;
             }
             $post = get_post($manual_id);
             if (!$post) {
-                error_log("[MAWBOT] Manual page $manual_id skipped: post not found");
                 continue;
             }
             if ($post->post_status !== 'publish') {
-                error_log("[MAWBOT] Manual page $manual_id skipped: not published (status: {$post->post_status})");
                 continue;
             }
             $content = wp_strip_all_tags(apply_filters('the_content', $post->post_content));
             if (strlen($content) < 50) {
-                error_log("[MAWBOT] Manual page $manual_id skipped: content too short (" . strlen($content) . " chars)");
                 continue;
             }
-            error_log("[MAWBOT] Manual page $manual_id INCLUDED: '{$post->post_title}' (" . strlen($content) . " chars)");
     
             $title = $post->post_title;
             $url = get_permalink($post->ID);
@@ -334,7 +330,6 @@ class WP_GPT_Chatbot_Content_Crawler {
         $this->update_website_training_data($training_data);
     
         // At the end of refresh_content(), after updating training data
-        error_log('[MAWBOT] SAVED TRAINING DATA: ' . print_r(get_option('wp_gpt_chatbot_settings'), true));
     
         return array(
             'success' => true,
