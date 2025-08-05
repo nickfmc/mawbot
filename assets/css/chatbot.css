@@ -344,7 +344,8 @@
 
 .wp-gpt-chatbot-popup-content {
     padding: 20px 20px 10px 20px;
-    max-height: 260px;
+
+    width: 100%;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -352,6 +353,7 @@
     background: none;
     border-radius: 0;
     box-shadow: none;
+    max-height: 323px;
 }
 
 .wp-gpt-chatbot-msg-user {
@@ -592,7 +594,7 @@
     left: 0;
     top: 110%;
     min-width: 280px;
-    max-width: 380px;
+    /* max-width: 380px; */
     font-size: 0.97em;
     opacity: 0;
     pointer-events: none;
@@ -629,11 +631,12 @@
 }
 .wp-gpt-chatbot-pills-list {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 8px;
-    max-height: 180px;
+    /* max-height: 180px; */
     overflow-y: auto;
     padding-bottom: 2px;
+    align-items: flex-start;
 }
 .wp-gpt-chatbot-pills-popup .wp-gpt-chatbot-pill {
     display: flex;
@@ -696,11 +699,17 @@
  */
 .wp-gpt-chatbot-inline-popup,
 .wp-gpt-chatbot-inline-popup.open {
-    top: 10px;
-    position: relative;
+    top: 73px;
+    width: 100%;
+    position: absolute;
     background: rgba(255,255,255,0.7);
     border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    max-height: 390px;
+
     backdrop-filter: blur(12px) saturate(180%);
     -webkit-backdrop-filter: blur(12px) saturate(180%);
+}
+
+.wp-gpt-chatbot-inline-popup.open {
+        border: 1px solid rgba(0, 0, 0, 0.18);
 }

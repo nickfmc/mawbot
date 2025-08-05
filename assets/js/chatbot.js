@@ -111,10 +111,13 @@
         $messagesContainer.append($loadingMessage);
         scrollToBottom($messagesContainer);
         
+        // Replace "you" with company name for better context, handling grammar
+        const processedMessage = replaceYouWithBotName(messageText);
+        
         // Add to conversation history
         conversationHistory.push({
             role: 'user',
-            content: messageText
+            content: processedMessage
         });
         
         // Send to ChatGPT API
@@ -124,7 +127,7 @@
             data: {
                 action: 'wp_gpt_chatbot_send_message',
                 nonce: wpGptChatbotSettings.nonce,
-                message: messageText,
+                message: processedMessage,
                 conversation: JSON.stringify(conversationHistory)
             },
             success: function(response) {
@@ -222,6 +225,75 @@
      */
     function scrollToBottom($messagesContainer) {
         $messagesContainer.scrollTop($messagesContainer[0].scrollHeight);
+    }
+    
+    /**
+     * Replace "you" references with bot name, handling grammar properly
+     * 
+     * @param {string} message The original message
+     * @return {string} Message with "you" replaced by bot name with proper grammar
+     */
+    function replaceYouWithBotName(message) {
+        // Get bot name from wpGptChatbotSettings, fallback to 'the company'
+        const botName = wpGptChatbotSettings.botName || 'the company';
+        
+        let processedMessage = message;
+        
+        // Define patterns to match "you" references in different contexts
+        const patterns = [
+            // "What do you do?" -> "What does [Company] do?"
+            { pattern: /\bwhat do you do\b/gi, replacement: `what does ${botName} do` },
+            { pattern: /\bwhat are you doing\b/gi, replacement: `what is ${botName} doing` },
+            { pattern: /\bwhat can you do\b/gi, replacement: `what can ${botName} do` },
+            
+            // "Who are you?" -> "Who is [Company]?"
+            { pattern: /\bwho are you\b/gi, replacement: `who is ${botName}` },
+            { pattern: /\bwho is you\b/gi, replacement: `who is ${botName}` },
+            
+            // "Do you have/offer/provide..." -> "Does [Company] have/offer/provide..."
+            { pattern: /\bdo you (have|offer|provide|sell|make|create|support|handle|deal|work)\b/gi, replacement: `does ${botName} $1` },
+            { pattern: /\bdo you (specialize|focus)\b/gi, replacement: `does ${botName} $1` },
+            
+            // "Can you..." -> "Can [Company]..."
+            { pattern: /\bcan you (help|assist|provide|offer|do|handle|support|work)\b/gi, replacement: `can ${botName} $1` },
+            
+            // "Are you..." -> "Is [Company]..."
+            { pattern: /\bare you (available|open|closed|located|based|able|willing)\b/gi, replacement: `is ${botName} $1` },
+            { pattern: /\bare you a (company|business|service|organization)\b/gi, replacement: `is ${botName} a $1` },
+            
+            // "How do you..." -> "How does [Company]..."
+            { pattern: /\bhow do you (work|operate|function|handle|process|deal|manage)\b/gi, replacement: `how does ${botName} $1` },
+            
+            // "Where are you..." -> "Where is [Company]..."
+            { pattern: /\bwhere are you (located|based|situated)\b/gi, replacement: `where is ${botName} $1` },
+            
+            // "When do you..." -> "When does [Company]..."
+            { pattern: /\bwhen do you (open|close|operate|work)\b/gi, replacement: `when does ${botName} $1` },
+            { pattern: /\bwhen are you (open|closed|available)\b/gi, replacement: `when is ${botName} $1` },
+            
+            // "Why do you..." -> "Why does [Company]..."
+            { pattern: /\bwhy do you (do|offer|provide|specialize|focus)\b/gi, replacement: `why does ${botName} $1` },
+            
+            // General patterns for common business questions
+            { pattern: /\byour (services|products|company|business|team|staff|hours|prices|pricing|location|address|phone|email)\b/gi, replacement: `${botName}'s $1` },
+            { pattern: /\byour (website|site)\b/gi, replacement: `${botName}'s $1` },
+            
+            // Questions about clients/customers
+            { pattern: /\bwhat clients do you (represent|serve|work with|have)\b/gi, replacement: `what clients does ${botName} $1` },
+            { pattern: /\bwhat brands do you (represent|serve|work with|have)\b/gi, replacement: `what brands does ${botName} $1` },
+            { pattern: /\bwho do you (serve|help|work with|represent)\b/gi, replacement: `who does ${botName} $1` },
+            
+            // Questions about experience/history
+            { pattern: /\bhow long have you been\b/gi, replacement: `how long has ${botName} been` },
+            { pattern: /\bwhen did you (start|begin|establish|found)\b/gi, replacement: `when did ${botName} $1` }
+        ];
+        
+        // Apply all patterns
+        patterns.forEach(({ pattern, replacement }) => {
+            processedMessage = processedMessage.replace(pattern, replacement);
+        });
+        
+        return processedMessage;
     }
     
 })(jQuery);
