@@ -458,7 +458,25 @@ class WP_GPT_Chatbot_API {
             return $this->unknown_response;
         }
         
+        // Get related content suggestions to append to the response
+        $settings = get_option('wp_gpt_chatbot_settings');
+        $show_related_content = isset($settings['show_related_content']) ? $settings['show_related_content'] : true;
+        
+        if ($show_related_content) {
+            $used_entries = $this->selective_context ? $this->get_relevant_training_data($message) : array();
+            $related_suggestions = $this->get_related_content_suggestions($message, $used_entries);
+            
+            // Append related content suggestions if available
+            if (!empty($related_suggestions)) {
+                $answer .= "\n\n**For more information, you might find these helpful:**\n";
+                foreach ($related_suggestions as $suggestion) {
+                    $answer .= "• [{$suggestion['title']}]({$suggestion['url']})\n";
+                }
+            }
+        }
+        
         // Cache the response for future use
+        $settings = get_option('wp_gpt_chatbot_settings');
         if (isset($settings['enable_caching']) && $settings['enable_caching']) {
             // Get the expiration time from settings
             $expiration = isset($settings['cache_expiration']) ? intval($settings['cache_expiration']) : 604800; // Default 1 week
@@ -467,5 +485,317 @@ class WP_GPT_Chatbot_API {
         }
         
         return $answer;
+    }
+    
+    /**
+     * Get related content suggestions based on the user's query
+     * 
+     * @param string $query The user's query
+     * @param array $used_entries Training data entries already used in the response
+     * @return array Array of related content suggestions with titles and URLs
+     */
+    private function get_related_content_suggestions($query, $used_entries = array()) {
+        $suggestions = array();
+        $used_source_ids = array();
+        
+        // Extract source IDs from used entries to avoid duplicates
+        foreach ($used_entries as $entry) {
+            if (isset($entry['source_id'])) {
+                $used_source_ids[] = $entry['source_id'];
+            }
+        }
+        
+        // Get all website content entries
+        $website_content = array();
+        foreach ($this->training_data as $item) {
+            if (isset($item['source_type']) && $item['source_type'] === 'website_content' 
+                && isset($item['source_url']) && !empty($item['source_url'])
+                && isset($item['source_id']) && !in_array($item['source_id'], $used_source_ids)) {
+                
+                $website_content[] = $item;
+            }
+        }
+        
+        // Debug logging for contact queries
+        if (stripos($query, 'contact') !== false) {
+            error_log('WP GPT Chatbot: Contact query detected: ' . $query);
+            error_log('WP GPT Chatbot: Available website content count: ' . count($website_content));
+            foreach ($website_content as $item) {
+                error_log('WP GPT Chatbot: Available URL: ' . $item['source_url']);
+            }
+        }
+        
+        // If we have website content, score it for relevance
+        if (!empty($website_content)) {
+            $query_lower = strtolower($query);
+            
+            // Enhanced keyword analysis
+            $query_words = $this->extract_meaningful_words($query_lower);
+            $question_intent = $this->analyze_question_intent($query_lower);
+            
+            $scored_content = array();
+            foreach ($website_content as $item) {
+                $score = $this->calculate_content_relevance_score($item, $query_lower, $query_words, $question_intent);
+                
+                if ($score > 0) {
+                    $scored_content[] = array('item' => $item, 'score' => $score);
+                }
+                
+                // Debug logging for contact queries
+                if (stripos($query, 'contact') !== false) {
+                    error_log('WP GPT Chatbot: URL: ' . $item['source_url'] . ' - Score: ' . $score);
+                }
+            }
+            
+            // Sort by score (highest first)
+            usort($scored_content, function($a, $b) { return $b['score'] - $a['score']; });
+            
+            // For contact queries, be even more strict - require very high relevance
+            $min_score_threshold = (in_array('contact', $question_intent)) ? 10 : 2;
+            
+            // Debug logging
+            if (stripos($query, 'contact') !== false) {
+                error_log('WP GPT Chatbot: Min score threshold: ' . $min_score_threshold);
+                error_log('WP GPT Chatbot: Top 3 scores: ' . json_encode(array_slice($scored_content, 0, 3)));
+            }
+            
+            // Get unique pages (avoid multiple entries for the same page)
+            $added_pages = array();
+            foreach ($scored_content as $content) {
+                if ($content['score'] < $min_score_threshold) {
+                    break; // Stop when scores get too low
+                }
+                
+                $item = $content['item'];
+                
+                if (!in_array($item['source_id'], $added_pages)) {
+                    // Extract page title
+                    $title = $this->extract_page_title($item);
+                    
+                    if (!empty($title)) {
+                        $suggestions[] = array(
+                            'title' => $title,
+                            'url' => $item['source_url'],
+                            'source_id' => $item['source_id'],
+                            'relevance_score' => $content['score'] // For debugging
+                        );
+                        
+                        $added_pages[] = $item['source_id'];
+                        
+                        // For contact queries, limit to 1 suggestion if we have a high-scoring contact page
+                        if (in_array('contact', $question_intent) && $content['score'] >= 15) {
+                            break; // Only show the best contact result
+                        }
+                        
+                        // Otherwise limit to 2 suggestions
+                        if (count($suggestions) >= 2) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        return $suggestions;
+    }
+    
+    /**
+     * Extract meaningful words from query, filtering out stop words and short words
+     */
+    private function extract_meaningful_words($query_lower) {
+        $stop_words = array('the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'can', 'may', 'might', 'must', 'shall', 'a', 'an', 'what', 'how', 'when', 'where', 'why', 'who', 'which');
+        
+        $words = preg_split('/[^a-z0-9]+/', $query_lower);
+        $meaningful_words = array();
+        
+        foreach ($words as $word) {
+            $word = trim($word);
+            if (strlen($word) > 2 && !in_array($word, $stop_words)) {
+                $meaningful_words[] = $word;
+            }
+        }
+        
+        return $meaningful_words;
+    }
+    
+    /**
+     * Analyze the intent behind a question to improve content matching
+     */
+    private function analyze_question_intent($query_lower) {
+        $intent_patterns = array(
+            'contact' => array('contact', 'reach', 'phone', 'email', 'address', 'location', 'office', 'call', 'speak', 'talk', 'get in touch', 'reach out', 'contact us', 'how to contact', 'how do i contact', 'where to contact'),
+            'services' => array('services', 'offer', 'provide', 'do', 'specialize', 'expertise', 'capabilities', 'solutions'),
+            'about' => array('about', 'who', 'company', 'team', 'history', 'founded', 'background', 'mission', 'vision'),
+            'pricing' => array('cost', 'price', 'pricing', 'rates', 'fees', 'budget', 'expensive', 'cheap', 'affordable'),
+            'process' => array('process', 'how', 'workflow', 'methodology', 'approach', 'steps', 'procedure'),
+            'portfolio' => array('work', 'portfolio', 'examples', 'case studies', 'projects', 'clients', 'results'),
+            'industries' => array('industry', 'industries', 'sector', 'healthcare', 'technology', 'b2b', 'market'),
+            'career' => array('jobs', 'career', 'hiring', 'employment', 'positions', 'work here', 'join'),
+            'privacy' => array('privacy', 'data', 'gdpr', 'policy', 'security', 'confidential'),
+            'legal' => array('legal', 'terms', 'conditions', 'disclaimer', 'compliance')
+        );
+        
+        $detected_intents = array();
+        foreach ($intent_patterns as $intent => $keywords) {
+            foreach ($keywords as $keyword) {
+                if (strpos($query_lower, $keyword) !== false) {
+                    $detected_intents[] = $intent;
+                    break;
+                }
+            }
+        }
+        
+        return array_unique($detected_intents);
+    }
+    
+    /**
+     * Calculate relevance score for content based on query, keywords, and intent
+     */
+    private function calculate_content_relevance_score($item, $query_lower, $query_words, $question_intents) {
+        $score = 0;
+        $content_text = strtolower($item['question'] . ' ' . $item['answer']);
+        $page_url = strtolower($item['source_url'] ?? '');
+        
+        // Get page title and content for additional context
+        $page_title = '';
+        $page_content = '';
+        if (isset($item['source_id'])) {
+            $post = get_post($item['source_id']);
+            if ($post) {
+                $page_title = strtolower($post->post_title);
+                $page_content = strtolower(wp_strip_all_tags($post->post_content));
+            }
+        }
+        
+        $all_content = $content_text . ' ' . $page_title . ' ' . $page_content . ' ' . $page_url;
+        
+        // 1. Exact phrase matching (highest weight)
+        if (strlen($query_lower) > 5 && strpos($all_content, $query_lower) !== false) {
+            $score += 10;
+        }
+        
+        // 2. Keyword matching with different weights
+        foreach ($query_words as $word) {
+            $word_score = 0;
+            
+            // Higher score for matches in title
+            if (strpos($page_title, $word) !== false) {
+                $word_score += 3;
+            }
+            
+            // Medium score for matches in URL
+            if (strpos($page_url, $word) !== false) {
+                $word_score += 2;
+            }
+            
+            // Base score for matches in content
+            if (strpos($all_content, $word) !== false) {
+                $word_score += 1;
+            }
+            
+            $score += $word_score;
+        }
+        
+        // 3. Intent-based matching (very high weight for relevant pages)
+        foreach ($question_intents as $intent) {
+            $intent_score = 0;
+            
+            switch ($intent) {
+                case 'contact':
+                    // Very high score for exact contact URL matches
+                    if (strpos($page_url, '/contact/') !== false || strpos($page_url, '/contact') !== false) {
+                        $intent_score = 25; // Extremely high for exact contact page
+                    } elseif (strpos($page_title, 'contact') !== false) {
+                        $intent_score = 20; // High for contact in title
+                    } elseif (preg_match('/phone|email|address|office|location/i', $all_content)) {
+                        $intent_score = 8;
+                    }
+                    break;
+                    
+                case 'about':
+                    if (strpos($page_url, '/about/') !== false || strpos($page_url, '/about') !== false) {
+                        $intent_score = 20;
+                    } elseif (strpos($page_title, 'about') !== false) {
+                        $intent_score = 15;
+                    } elseif (preg_match('/team|company|history|mission|vision/i', $all_content)) {
+                        $intent_score = 8;
+                    }
+                    break;
+                    
+                case 'services':
+                    if (strpos($page_url, '/services/') !== false || strpos($page_url, '/services') !== false) {
+                        $intent_score = 20;
+                    } elseif (strpos($page_title, 'services') !== false) {
+                        $intent_score = 15;
+                    } elseif (preg_match('/expertise|solutions|capabilities|offer/i', $all_content)) {
+                        $intent_score = 8;
+                    }
+                    break;
+                    
+                case 'privacy':
+                    if (strpos($page_url, '/privacy') !== false || strpos($page_title, 'privacy') !== false) {
+                        $intent_score = 25; // Very high for exact matches
+                    }
+                    break;
+                    
+                case 'career':
+                    if (preg_match('/\/career|\/jobs|\/hiring|\/employment/i', $page_url) || preg_match('/career|jobs|hiring|employment/i', $page_title)) {
+                        $intent_score = 20;
+                    }
+                    break;
+                    
+                case 'portfolio':
+                    if (preg_match('/\/portfolio|\/work|\/case-studies|\/projects/i', $page_url) || preg_match('/portfolio|work|case studies|projects/i', $page_title)) {
+                        $intent_score = 20;
+                    }
+                    break;
+            }
+            
+            $score += $intent_score;
+        }
+        
+        // 4. Penalize very short content that might not be useful
+        if (strlen($content_text) < 50) {
+            $score = max(0, $score - 2);
+        }
+        
+        // 5. Bonus for pages that are likely to be high-value landing pages
+        if (preg_match('/\/(contact|about|services|portfolio)(?:\/|$)/i', $page_url)) {
+            $score += 5; // Bonus for main navigation pages
+        }
+        
+        return $score;
+    }
+    
+    /**
+     * Extract a meaningful title for a page
+     */
+    private function extract_page_title($item) {
+        $title = '';
+        
+        // Try to get the actual page title first
+        if (isset($item['source_id'])) {
+            $post = get_post($item['source_id']);
+            if ($post) {
+                $title = $post->post_title;
+            }
+        }
+        
+        // Fallback: extract title from question patterns
+        if (empty($title)) {
+            if (preg_match("/What does the .* '(.*)' say\?/", $item['question'], $matches)) {
+                $title = $matches[1];
+            } elseif (preg_match("/Tell me about (.*?)( \(Part \d+\))?$/", $item['question'], $matches)) {
+                $title = $matches[1];
+            } elseif (preg_match("/What information is on .+?\?/", $item['question'])) {
+                // Try to extract from URL
+                $url_path = parse_url($item['source_url'], PHP_URL_PATH);
+                if ($url_path) {
+                    $title = ucwords(str_replace(array('-', '_', '/'), ' ', trim($url_path, '/')));
+                }
+            }
+        }
+        
+        return $title;
     }
 }

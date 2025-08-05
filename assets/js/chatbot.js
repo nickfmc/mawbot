@@ -180,17 +180,37 @@
      * @return {string} Formatted message
      */
     function formatMessage(message) {
+        // First, process markdown links [text](url) - do this BEFORE line breaks
+        message = message.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+        
         // Convert line breaks to <br>
         message = message.replace(/\n/g, '<br>');
         
-        // Bold text: **text**
+        // Bold text: **text** - process before single asterisks
         message = message.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
         
-        // Italic text: *text*
-        message = message.replace(/\*(.*?)\*/g, '<em>$1</em>');
+        // Italic text: *text* (single asterisk only, not part of double asterisks)
+        message = message.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
         
-        // Links: [text](url)
-        message = message.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank">$1</a>');
+        // Convert bullet points to proper list items
+        message = message.replace(/^•\s(.+)$/gm, '<li>$1</li>');
+        
+        // Convert standalone URLs to clickable links (simple method)
+        message = message.replace(/(^|[^"'>])(https?:\/\/[^\s<"']+)/g, function(match, prefix, url) {
+            // Check if this URL is already inside an anchor tag
+            if (match.indexOf('<a ') !== -1 || match.indexOf('href=') !== -1) {
+                return match;
+            }
+            return prefix + '<a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>';
+        });
+        
+        // Wrap consecutive list items in ul tags
+        message = message.replace(/(<li>.*?<\/li>(?:<br><li>.*?<\/li>)*)/g, '<ul>$1</ul>');
+        
+        // Clean up br tags around lists
+        message = message.replace(/<br><ul>/g, '<ul>');
+        message = message.replace(/<\/ul><br>/g, '</ul>');
+        message = message.replace(/<li>(.*?)<\/li><br>/g, '<li>$1</li>');
         
         return message;
     }

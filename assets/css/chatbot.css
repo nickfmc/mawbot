@@ -110,6 +110,39 @@
     color: white;
 }
 
+/* Link styles in chat messages */
+.wp-gpt-chatbot-message-content a {
+    color: #007bff;
+    text-decoration: underline;
+    transition: color 0.2s ease;
+}
+
+.wp-gpt-chatbot-message-content a:hover {
+    color: #0056b3;
+    text-decoration: none;
+}
+
+.wp-gpt-chatbot-message-content a:visited {
+    color: #6f42c1;
+}
+
+/* Related content suggestions styling */
+.wp-gpt-chatbot-message-content ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+.wp-gpt-chatbot-message-content li {
+    margin: 5px 0;
+    line-height: 1.4;
+}
+
+/* Style for suggested links section */
+.wp-gpt-chatbot-message-content strong {
+    color: #333;
+    font-weight: 600;
+}
+
 .wp-gpt-chatbot-input-container {
     display: flex;
     padding: 10px;

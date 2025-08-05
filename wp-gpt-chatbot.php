@@ -35,7 +35,7 @@ function wp_gpt_chatbot_activate() {
         $default_settings = array(
             'api_key' => '',
             'model' => 'gpt-4.1-nano',
-            'training_prompt' => 'CRITICAL INSTRUCTIONS: You are a chatbot that can ONLY answer questions using the specific training data and website content provided below. You are FORBIDDEN from using any general AI knowledge, including information about famous people, technology, or any other topics not explicitly provided in your training data or included website content.\n\nUPDATED RULES:\n1. You may use information from Q&A pairs AND from any included website content (including manually included pages), even if the content is not in Q&A format.\n2. You may summarize, paraphrase, or synthesize answers using the provided website content, as long as the answer is accurate and based on the included material.\n3. If a question cannot be answered using the provided training data or included website content, you MUST respond with: "I don\'t have that specific information in my knowledge base. Please contact us directly for assistance."\n4. Do NOT provide general knowledge answers about famous people, historical figures, or any other topics not in your knowledge base.\n5. Do NOT make up or infer answers that aren\'t supported by the provided training data or included website content.\n6. Always prioritize accuracy and clarity, and stay strictly within the boundaries of your provided training material and included website content.\n\nYou must follow these rules without exception.',
+            'training_prompt' => 'CRITICAL INSTRUCTIONS: You are a chatbot that can ONLY answer questions using the specific training data and website content provided below. You are FORBIDDEN from using any general AI knowledge, including information about famous people, technology, or any other topics not explicitly provided in your training data or included website content.\n\nUPDATED RULES:\n1. You may use information from Q&A pairs AND from any included website content (including manually included pages), even if the content is not in Q&A format.\n2. You may summarize, paraphrase, or synthesize answers using the provided website content, as long as the answer is accurate and based on the included material.\n3. If a question cannot be answered using the provided training data or included website content, you MUST respond with: "I don\'t have that specific information in my knowledge base. Please contact us directly for assistance."\n4. Do NOT provide general knowledge answers about famous people, historical figures, or any other topics not in your knowledge base.\n5. Do NOT make up or infer answers that aren\'t supported by the provided training data or included website content.\n6. Always prioritize accuracy and clarity, and stay strictly within the boundaries of your provided training material and included website content.\n7. When mentioning URLs in your responses, format them as clickable links using markdown syntax: [Link Text](URL)\n8. Keep your responses helpful and conversational, but always factual based on your knowledge base.\n9. The system will automatically suggest related content after your response to help users find more information.\n\nYou must follow these rules without exception.',
             'unknown_response' => 'I don\'t have that specific information in my knowledge base. I can only answer questions based on the training data I\'ve been provided. Please contact us directly for assistance with questions outside my scope.',
             'primary_color' => '#007bff',
             'secondary_color' => '#ffffff',
@@ -56,7 +56,8 @@ function wp_gpt_chatbot_activate() {
             'enable_caching' => true,
             'cache_expiration' => 604800, // 1 week in seconds
             'conversation_memory' => 5,
-            'selective_context' => true
+            'selective_context' => true,
+            'show_related_content' => true
         );
         update_option('wp_gpt_chatbot_settings', $default_settings);
     }
@@ -228,9 +229,48 @@ function wp_gpt_chatbot_shortcode($atts) {
         function typeAssistantMessage($container, text, callback) {
             var i = 0;
             var speed = 18; // ms per character
+            
+            // Format the full text first with markdown support
+            function formatMarkdown(message) {
+                // First, process markdown links [text](url)
+                message = message.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+                
+                // Bold text: **text**
+                message = message.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                
+                // Italic text: *text*
+                message = message.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
+                
+                // Convert bullet points to proper list items
+                message = message.replace(/^•\s(.+)$/gm, '<li>$1</li>');
+                
+                // Convert standalone URLs to clickable links
+                message = message.replace(/(^|[^"'>])(https?:\/\/[^\s<"']+)/g, function(match, prefix, url) {
+                    if (match.indexOf('<a ') !== -1 || match.indexOf('href=') !== -1) {
+                        return match;
+                    }
+                    return prefix + '<a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>';
+                });
+                
+                // Wrap consecutive list items in ul tags
+                message = message.replace(/(<li>.*?<\/li>(?:\n<li>.*?<\/li>)*)/g, '<ul>$1</ul>');
+                
+                // Convert line breaks to <br>
+                message = message.replace(/\n/g, '<br>');
+                
+                // Clean up br tags around lists
+                message = message.replace(/<br><ul>/g, '<ul>');
+                message = message.replace(/<\/ul><br>/g, '</ul>');
+                message = message.replace(/<li>(.*?)<\/li><br>/g, '<li>$1</li>');
+                
+                return message;
+            }
+            
+            var formattedText = formatMarkdown(text);
+            
             function type() {
-                if (i <= text.length) {
-                    $container.html(text.substring(0, i).replace(/\n/g,'<br>'));
+                if (i <= formattedText.length) {
+                    $container.html(formattedText.substring(0, i));
                     i++;
                     setTimeout(type, speed);
                     // Scroll to bottom as message types
