@@ -497,11 +497,12 @@ class WP_GPT_Chatbot_API {
     private function get_related_content_suggestions($query, $used_entries = array()) {
         $suggestions = array();
         $used_source_ids = array();
+        $prioritized_source_ids = array();
         
-        // Extract source IDs from used entries to avoid duplicates
+        // Extract source IDs from used entries - these should be PRIORITIZED, not excluded
         foreach ($used_entries as $entry) {
-            if (isset($entry['source_id'])) {
-                $used_source_ids[] = $entry['source_id'];
+            if (isset($entry['source_id']) && isset($entry['source_url']) && !empty($entry['source_url'])) {
+                $prioritized_source_ids[] = $entry['source_id'];
             }
         }
         
@@ -510,18 +511,9 @@ class WP_GPT_Chatbot_API {
         foreach ($this->training_data as $item) {
             if (isset($item['source_type']) && $item['source_type'] === 'website_content' 
                 && isset($item['source_url']) && !empty($item['source_url'])
-                && isset($item['source_id']) && !in_array($item['source_id'], $used_source_ids)) {
+                && isset($item['source_id'])) {
                 
                 $website_content[] = $item;
-            }
-        }
-        
-        // Debug logging for contact queries
-        if (stripos($query, 'contact') !== false) {
-            error_log('WP GPT Chatbot: Contact query detected: ' . $query);
-            error_log('WP GPT Chatbot: Available website content count: ' . count($website_content));
-            foreach ($website_content as $item) {
-                error_log('WP GPT Chatbot: Available URL: ' . $item['source_url']);
             }
         }
         
@@ -537,27 +529,21 @@ class WP_GPT_Chatbot_API {
             foreach ($website_content as $item) {
                 $score = $this->calculate_content_relevance_score($item, $query_lower, $query_words, $question_intent);
                 
-                if ($score > 0) {
-                    $scored_content[] = array('item' => $item, 'score' => $score);
+                // BOOST score significantly if this page was used in generating the response
+                if (in_array($item['source_id'], $prioritized_source_ids)) {
+                    $score += 50; // Major boost for pages that were actually relevant enough to use
                 }
                 
-                // Debug logging for contact queries
-                if (stripos($query, 'contact') !== false) {
-                    error_log('WP GPT Chatbot: URL: ' . $item['source_url'] . ' - Score: ' . $score);
+                if ($score > 0) {
+                    $scored_content[] = array('item' => $item, 'score' => $score);
                 }
             }
             
             // Sort by score (highest first)
             usort($scored_content, function($a, $b) { return $b['score'] - $a['score']; });
             
-            // For contact queries, be even more strict - require very high relevance
-            $min_score_threshold = (in_array('contact', $question_intent)) ? 10 : 2;
-            
-            // Debug logging
-            if (stripos($query, 'contact') !== false) {
-                error_log('WP GPT Chatbot: Min score threshold: ' . $min_score_threshold);
-                error_log('WP GPT Chatbot: Top 3 scores: ' . json_encode(array_slice($scored_content, 0, 3)));
-            }
+            // Lower minimum threshold since we want to show the actually relevant pages
+            $min_score_threshold = 1;
             
             // Get unique pages (avoid multiple entries for the same page)
             $added_pages = array();
@@ -582,13 +568,8 @@ class WP_GPT_Chatbot_API {
                         
                         $added_pages[] = $item['source_id'];
                         
-                        // For contact queries, limit to 1 suggestion if we have a high-scoring contact page
-                        if (in_array('contact', $question_intent) && $content['score'] >= 15) {
-                            break; // Only show the best contact result
-                        }
-                        
-                        // Otherwise limit to 2 suggestions
-                        if (count($suggestions) >= 2) {
+                        // Limit to 3 suggestions total
+                        if (count($suggestions) >= 3) {
                             break;
                         }
                     }
@@ -628,7 +609,7 @@ class WP_GPT_Chatbot_API {
             'about' => array('about', 'who', 'company', 'team', 'history', 'founded', 'background', 'mission', 'vision'),
             'pricing' => array('cost', 'price', 'pricing', 'rates', 'fees', 'budget', 'expensive', 'cheap', 'affordable'),
             'process' => array('process', 'how', 'workflow', 'methodology', 'approach', 'steps', 'procedure'),
-            'portfolio' => array('work', 'portfolio', 'examples', 'case studies', 'projects', 'clients', 'results'),
+            'portfolio' => array('work', 'portfolio', 'examples', 'case studies', 'case study', 'projects', 'clients', 'results', 'success story', 'success stories', 'achievements', 'accomplishments', 'best work', 'showcase', 'previous work', 'past work', 'client work', 'sample work'),
             'industries' => array('industry', 'industries', 'sector', 'healthcare', 'technology', 'b2b', 'market'),
             'career' => array('jobs', 'career', 'hiring', 'employment', 'positions', 'work here', 'join'),
             'privacy' => array('privacy', 'data', 'gdpr', 'policy', 'security', 'confidential'),
@@ -745,8 +726,14 @@ class WP_GPT_Chatbot_API {
                     break;
                     
                 case 'portfolio':
-                    if (preg_match('/\/portfolio|\/work|\/case-studies|\/projects/i', $page_url) || preg_match('/portfolio|work|case studies|projects/i', $page_title)) {
-                        $intent_score = 20;
+                    if (strpos($page_url, '/work/') !== false || strpos($page_url, '/work') !== false) {
+                        $intent_score = 25; // Very high for work page
+                    } elseif (preg_match('/\/portfolio|\/case-studies|\/projects|\/case_studies/i', $page_url)) {
+                        $intent_score = 25; // Very high for portfolio/case studies pages
+                    } elseif (preg_match('/portfolio|work|case studies|projects|success stor/i', $page_title)) {
+                        $intent_score = 20; // High for relevant titles
+                    } elseif (preg_match('/client|results|achievement|example|showcase/i', $all_content)) {
+                        $intent_score = 10; // Medium for related content
                     }
                     break;
             }

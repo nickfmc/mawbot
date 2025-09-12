@@ -144,6 +144,8 @@ class WP_GPT_Chatbot_Admin_Settings {
         if (isset($input['cache_expiration'])) $output['cache_expiration'] = absint($input['cache_expiration']);
         if (isset($input['conversation_memory'])) $output['conversation_memory'] = max(1, min(20, absint($input['conversation_memory'])));
         if (isset($input['selective_context'])) $output['selective_context'] = (bool) $input['selective_context'];
+        if (isset($input['show_related_content'])) $output['show_related_content'] = (bool) $input['show_related_content'];
+        else $output['show_related_content'] = false; // Explicitly set to false when checkbox is unchecked
 
         // Website content section
         if (isset($input['website_content']) && is_array($input['website_content'])) {

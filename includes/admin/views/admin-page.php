@@ -301,6 +301,15 @@ if (isset($_POST['import_training']) && isset($_FILES['training_csv'])) {
             </tr>
             <tr>
                 <th scope="row">
+                    <label for="wp_gpt_chatbot_settings[show_related_content]"><?php echo esc_html__('Show Related Content Links', 'wp-gpt-chatbot'); ?></label>
+                </th>
+                <td>
+                    <input type="checkbox" id="wp_gpt_chatbot_settings[show_related_content]" name="wp_gpt_chatbot_settings[show_related_content]" value="1" <?php checked(isset($settings['show_related_content']) && $settings['show_related_content']); ?>>
+                    <p class="description"><?php echo esc_html__('Append suggested related content links at the end of chatbot responses.', 'wp-gpt-chatbot'); ?></p>
+                </td>
+            </tr>
+            <tr>
+                <th scope="row">
                     <?php echo esc_html__('Manage Cache', 'wp-gpt-chatbot'); ?>
                 </th>
                 <td>
