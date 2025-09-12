@@ -66,7 +66,8 @@ class WP_GPT_Chatbot_API {
      * @return array Relevant training data entries
      */
     private function get_relevant_training_data($query) {
-        // Normalize the query
+        // Normalize the query for better matching
+        $normalized_query = $this->normalize_question($query);
         $query = strtolower(trim($query));
         
         // Extract keywords (remove common stop words)
@@ -105,6 +106,13 @@ class WP_GPT_Chatbot_API {
         foreach ($this->training_data as $index => $item) {
             $score = 0;
             $content = strtolower($item['question'] . ' ' . $item['answer']);
+            $normalized_item_question = $this->normalize_question($item['question']);
+            
+            // Check for exact normalized match first (highest score)
+            if ($normalized_query === $normalized_item_question) {
+                $score += 10; // Very high score for exact match after normalization
+            }
+            
             foreach ($keywords as $keyword) {
                 if (strpos($content, $keyword) !== false) {
                     $score += 1;
@@ -114,10 +122,21 @@ class WP_GPT_Chatbot_API {
             if (isset($item['source_type']) && $item['source_type'] === 'website_content') {
                 if (strpos($content, $query) !== false) {
                     $score += 2; // Strong boost for phrase match
+                } elseif (strpos($content, $normalized_query) !== false) {
+                    $score += 3; // Even stronger boost for normalized phrase match
+                } elseif (similar_text($normalized_item_question, $normalized_query, $percent) && $percent > 70) {
+                    $score += 2; // Fuzzy match on normalized questions
                 } elseif (similar_text($item['question'], $query, $percent) && $percent > 60) {
-                    $score += 1; // Fuzzy match
+                    $score += 1; // Original fuzzy match
                 }
                 $website_candidates[] = array('item' => $item, 'score' => $score);
+            } else {
+                // For manual entries, also check normalized matching
+                if (strpos($content, $normalized_query) !== false) {
+                    $score += 3; // Boost for normalized content match
+                } elseif (similar_text($normalized_item_question, $normalized_query, $percent) && $percent > 70) {
+                    $score += 2; // Fuzzy match on normalized questions
+                }
             }
             if ($score > 0) {
                 $scored_entries[] = array('item' => $item, 'score' => $score);
@@ -807,5 +826,62 @@ class WP_GPT_Chatbot_API {
         }
         
         return $title;
+    }
+    
+    /**
+     * Normalize a question for better matching by removing punctuation differences
+     * and standardizing format
+     * 
+     * @param string $question The question to normalize
+     * @return string Normalized question
+     */
+    private function normalize_question($question) {
+        // Convert to lowercase
+        $normalized = strtolower(trim($question));
+        
+        // Remove common punctuation that doesn't affect meaning
+        $normalized = preg_replace('/[?!.,;:]+$/', '', $normalized);
+        
+        // Remove extra spaces
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+        
+        // Trim again
+        $normalized = trim($normalized);
+        
+        // Add common question variations handling
+        $patterns = array(
+            // Normalize common question starts
+            '/^what\'s\b/' => 'what is',
+            '/^how\'s\b/' => 'how is', 
+            '/^where\'s\b/' => 'where is',
+            '/^who\'s\b/' => 'who is',
+            '/^when\'s\b/' => 'when is',
+            '/^why\'s\b/' => 'why is',
+            
+            // Normalize contractions
+            '/\bcan\'t\b/' => 'cannot',
+            '/\bwon\'t\b/' => 'will not',
+            '/\bdon\'t\b/' => 'do not',
+            '/\bdoesn\'t\b/' => 'does not',
+            '/\bisn\'t\b/' => 'is not',
+            '/\baren\'t\b/' => 'are not',
+            '/\bwasn\'t\b/' => 'was not',
+            '/\bweren\'t\b/' => 'were not',
+            '/\bhaven\'t\b/' => 'have not',
+            '/\bhasn\'t\b/' => 'has not',
+            '/\bhadn\'t\b/' => 'had not',
+            
+            // Remove filler words that don't affect meaning
+            '/\b(um|uh|well|like|you know)\b/' => '',
+            
+            // Normalize multiple spaces again after replacements
+            '/\s+/' => ' '
+        );
+        
+        foreach ($patterns as $pattern => $replacement) {
+            $normalized = preg_replace($pattern, $replacement, $normalized);
+        }
+        
+        return trim($normalized);
     }
 }
