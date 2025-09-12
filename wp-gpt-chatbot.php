@@ -57,7 +57,8 @@ function wp_gpt_chatbot_activate() {
             'cache_expiration' => 604800, // 1 week in seconds
             'conversation_memory' => 5,
             'selective_context' => true,
-            'show_related_content' => true
+            'show_related_content' => true,
+            'enable_question_logging' => false
         );
         update_option('wp_gpt_chatbot_settings', $default_settings);
     }

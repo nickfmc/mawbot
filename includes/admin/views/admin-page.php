@@ -310,12 +310,32 @@ if (isset($_POST['import_training']) && isset($_FILES['training_csv'])) {
             </tr>
             <tr>
                 <th scope="row">
+                    <label for="wp_gpt_chatbot_settings[enable_question_logging]"><?php echo esc_html__('Enable Question Logging', 'wp-gpt-chatbot'); ?></label>
+                </th>
+                <td>
+                    <input type="checkbox" id="wp_gpt_chatbot_settings[enable_question_logging]" name="wp_gpt_chatbot_settings[enable_question_logging]" value="1" <?php checked(isset($settings['enable_question_logging']) && $settings['enable_question_logging']); ?>>
+                    <p class="description"><?php echo esc_html__('Log all questions and responses for analysis. Includes user IP and response time.', 'wp-gpt-chatbot'); ?></p>
+                </td>
+            </tr>
+            <tr>
+                <th scope="row">
                     <?php echo esc_html__('Manage Cache', 'wp-gpt-chatbot'); ?>
                 </th>
                 <td>
                     <button type="button" id="clear-cache-button" class="button button-secondary"><?php echo esc_html__('Clear Response Cache', 'wp-gpt-chatbot'); ?></button>
                     <span id="cache-status-message"></span>
                     <p class="description"><?php echo esc_html__('Clear all cached responses. Use this if you\'ve updated training content or settings.', 'wp-gpt-chatbot'); ?></p>
+                </td>
+            </tr>
+            <tr>
+                <th scope="row">
+                    <?php echo esc_html__('Question Logs', 'wp-gpt-chatbot'); ?>
+                </th>
+                <td>
+                    <button type="button" id="download-logs-button" class="button button-secondary"><?php echo esc_html__('Download Question Logs', 'wp-gpt-chatbot'); ?></button>
+                    <button type="button" id="clear-logs-button" class="button button-secondary" style="margin-left: 10px;"><?php echo esc_html__('Clear All Logs', 'wp-gpt-chatbot'); ?></button>
+                    <span id="logs-status-message"></span>
+                    <p class="description"><?php echo esc_html__('Download all logged questions as CSV or clear the question logs database. Logging must be enabled above.', 'wp-gpt-chatbot'); ?></p>
                 </td>
             </tr>
         </table>
@@ -348,6 +368,47 @@ if (isset($_POST['import_training']) && isset($_FILES['training_csv'])) {
                     },
                     error: function() {
                         statusMessage.text('<?php echo esc_js(__('Error clearing cache.', 'wp-gpt-chatbot')); ?>');
+                    },
+                    complete: function() {
+                        button.prop('disabled', false);
+                    }
+                });
+            });
+            
+            $('#download-logs-button').on('click', function() {
+                window.location.href = ajaxurl + '?action=wp_gpt_chatbot_download_logs&nonce=' + '<?php echo wp_create_nonce('wp_gpt_chatbot_admin_nonce'); ?>';
+            });
+            
+            $('#clear-logs-button').on('click', function() {
+                if (!confirm('<?php echo esc_js(__('Are you sure you want to delete all question logs? This action cannot be undone.', 'wp-gpt-chatbot')); ?>')) {
+                    return;
+                }
+                
+                var button = $(this);
+                var statusMessage = $('#logs-status-message');
+                
+                button.prop('disabled', true);
+                statusMessage.text('<?php echo esc_js(__('Clearing logs...', 'wp-gpt-chatbot')); ?>');
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'wp_gpt_chatbot_clear_logs',
+                        nonce: '<?php echo wp_create_nonce('wp_gpt_chatbot_admin_nonce'); ?>'
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            statusMessage.text(response.data.message);
+                            setTimeout(function() {
+                                statusMessage.text('');
+                            }, 3000);
+                        } else {
+                            statusMessage.text(response.data.message);
+                        }
+                    },
+                    error: function() {
+                        statusMessage.text('<?php echo esc_js(__('Error clearing logs.', 'wp-gpt-chatbot')); ?>');
                     },
                     complete: function() {
                         button.prop('disabled', false);

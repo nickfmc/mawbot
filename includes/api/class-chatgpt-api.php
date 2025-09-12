@@ -307,11 +307,19 @@ class WP_GPT_Chatbot_API {
      * @return string The response from ChatGPT or unknown question message
      */
     private function send_to_chatgpt($message, $conversation_history) {
+        $start_time = microtime(true);
+        
         // Check cache first
         require_once WP_GPT_CHATBOT_PATH . 'includes/class-cache-manager.php';
         $cached_response = WP_GPT_Chatbot_Cache_Manager::get_cached_response($message);
         
         if ($cached_response !== false) {
+            // Log cached response if logging is enabled
+            $settings = get_option('wp_gpt_chatbot_settings');
+            if (isset($settings['enable_question_logging']) && $settings['enable_question_logging']) {
+                $response_time = microtime(true) - $start_time;
+                WP_GPT_Chatbot_Database_Manager::log_question($message, $cached_response, $response_time, true);
+            }
             // error_log('WP GPT Chatbot: Returning cached response: "' . $cached_response . '"');
             return $cached_response;
         }
@@ -327,6 +335,14 @@ class WP_GPT_Chatbot_API {
             // error_log('WP GPT Chatbot: Unknown response: ' . $this->unknown_response);
             // Ensure we have a fallback response if the setting is empty
             $response = !empty($this->unknown_response) ? $this->unknown_response : 'I don\'t have that specific information in my knowledge base. Please contact us directly for assistance.';
+            
+            // Log the unknown response if logging is enabled
+            $settings = get_option('wp_gpt_chatbot_settings');
+            if (isset($settings['enable_question_logging']) && $settings['enable_question_logging']) {
+                $response_time = microtime(true) - $start_time;
+                WP_GPT_Chatbot_Database_Manager::log_question($message, $response, $response_time, false);
+            }
+            
             // Return the unknown question response
             return $response;
         }
@@ -482,6 +498,13 @@ class WP_GPT_Chatbot_API {
             $expiration = isset($settings['cache_expiration']) ? intval($settings['cache_expiration']) : 604800; // Default 1 week
             
             WP_GPT_Chatbot_Cache_Manager::cache_response($message, $answer, $expiration);
+        }
+        
+        // Log the question if logging is enabled
+        if (isset($settings['enable_question_logging']) && $settings['enable_question_logging']) {
+            $response_time = isset($start_time) ? (microtime(true) - $start_time) : 0;
+            $was_cached = ($cached_response !== false);
+            WP_GPT_Chatbot_Database_Manager::log_question($message, $answer, $response_time, $was_cached);
         }
         
         return $answer;

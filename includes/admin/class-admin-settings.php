@@ -23,6 +23,13 @@ class WP_GPT_Chatbot_Admin_Settings {
         // Add AJAX handler for clearing cache
         add_action('wp_ajax_wp_gpt_chatbot_clear_cache', array($this, 'ajax_clear_cache'));
         
+        // Add AJAX handlers for question logs
+        add_action('wp_ajax_wp_gpt_chatbot_download_logs', array($this, 'ajax_download_logs'));
+        add_action('wp_ajax_wp_gpt_chatbot_clear_logs', array($this, 'ajax_clear_logs'));
+        
+        // Ensure question logs table exists
+        add_action('admin_init', array($this, 'ensure_question_logs_table'));
+        
         // Set active tab
         if (isset($_GET['tab'])) {
             $this->active_tab = sanitize_text_field($_GET['tab']);
@@ -47,6 +54,87 @@ class WP_GPT_Chatbot_Admin_Settings {
             wp_send_json_success(array('message' => 'Cache cleared successfully.'));
         } else {
             wp_send_json_error(array('message' => 'Error clearing cache.'));
+        }
+        
+        wp_die();
+    }
+    
+    /**
+     * AJAX handler for downloading question logs
+     */
+    public function ajax_download_logs() {
+        check_ajax_referer('wp_gpt_chatbot_admin_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die('Permission denied');
+        }
+        
+        require_once WP_GPT_CHATBOT_PATH . 'includes/class-database-manager.php';
+        
+        // Get all question logs
+        $logs = WP_GPT_Chatbot_Database_Manager::get_question_logs(10000); // Get up to 10k records
+        
+        if (empty($logs)) {
+            wp_die('No question logs found.');
+        }
+        
+        // Set headers for CSV download
+        header('Content-Type: text/csv');
+        header('Content-Disposition: attachment; filename="chatbot-question-logs-' . date('Y-m-d-H-i-s') . '.csv"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+        
+        // Open output stream
+        $output = fopen('php://output', 'w');
+        
+        // Write CSV header
+        fputcsv($output, array(
+            'ID',
+            'Question',
+            'Response',
+            'User IP',
+            'User Agent',
+            'Asked At',
+            'Response Time (seconds)',
+            'Was Cached'
+        ));
+        
+        // Write data rows
+        foreach ($logs as $log) {
+            fputcsv($output, array(
+                $log->id,
+                $log->question,
+                $log->response,
+                $log->user_ip,
+                $log->user_agent,
+                $log->asked_at,
+                $log->response_time,
+                $log->was_cached ? 'Yes' : 'No'
+            ));
+        }
+        
+        fclose($output);
+        exit;
+    }
+    
+    /**
+     * AJAX handler for clearing question logs
+     */
+    public function ajax_clear_logs() {
+        check_ajax_referer('wp_gpt_chatbot_admin_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Permission denied'));
+            return;
+        }
+        
+        require_once WP_GPT_CHATBOT_PATH . 'includes/class-database-manager.php';
+        $result = WP_GPT_Chatbot_Database_Manager::clear_question_logs();
+        
+        if ($result) {
+            wp_send_json_success(array('message' => 'Question logs cleared successfully.'));
+        } else {
+            wp_send_json_error(array('message' => 'Error clearing question logs.'));
         }
         
         wp_die();
@@ -146,6 +234,8 @@ class WP_GPT_Chatbot_Admin_Settings {
         if (isset($input['selective_context'])) $output['selective_context'] = (bool) $input['selective_context'];
         if (isset($input['show_related_content'])) $output['show_related_content'] = (bool) $input['show_related_content'];
         else $output['show_related_content'] = false; // Explicitly set to false when checkbox is unchecked
+        if (isset($input['enable_question_logging'])) $output['enable_question_logging'] = (bool) $input['enable_question_logging'];
+        else $output['enable_question_logging'] = false; // Explicitly set to false when checkbox is unchecked
 
         // Website content section
         if (isset($input['website_content']) && is_array($input['website_content'])) {
@@ -222,5 +312,38 @@ class WP_GPT_Chatbot_Admin_Settings {
             </a>
         </h2>
         <?php
+    }
+    
+    /**
+     * Ensure the question logs table exists (in case plugin was updated)
+     */
+    public function ensure_question_logs_table() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'gpt_chatbot_question_logs';
+        
+        // Check if table exists
+        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name;
+        
+        if (!$table_exists) {
+            // Create the table
+            $charset_collate = $wpdb->get_charset_collate();
+            
+            $sql = "CREATE TABLE $table_name (
+                id mediumint(9) NOT NULL AUTO_INCREMENT,
+                question text NOT NULL,
+                response text,
+                user_ip varchar(45),
+                user_agent text,
+                asked_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                response_time float,
+                was_cached tinyint(1) DEFAULT 0,
+                PRIMARY KEY  (id),
+                KEY asked_at (asked_at)
+            ) $charset_collate;";
+            
+            require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+            dbDelta($sql);
+        }
     }
 }
