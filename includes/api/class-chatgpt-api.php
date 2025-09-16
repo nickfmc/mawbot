@@ -220,14 +220,19 @@ class WP_GPT_Chatbot_API {
         $settings = get_option('wp_gpt_chatbot_settings');
         $website_content_enabled = isset($settings['website_content']['enabled']) && $settings['website_content']['enabled'];
         $manual_pages = isset($settings['website_content']['manual_pages']) && is_array($settings['website_content']['manual_pages']) ? $settings['website_content']['manual_pages'] : array();
+        $media_coverage = isset($settings['media_coverage']) && is_array($settings['media_coverage']) ? $settings['media_coverage'] : array();
+        
         // Always use selective context if enabled, and always include manual_pages if set
         if (!empty($query) && $this->selective_context) {
             $relevant_data = $this->get_relevant_training_data($query);
-            if (!empty($relevant_data)) {
+            $relevant_media = $this->get_relevant_media_coverage($query, $media_coverage);
+            
+            if (!empty($relevant_data) || !empty($relevant_media)) {
                 $content .= "\n\n--- START OF YOUR COMPLETE KNOWLEDGE BASE ---\n\n";
                 $manual_entries = array();
                 $website_entries = array();
                 $manual_page_entries = array();
+                
                 foreach ($relevant_data as $item) {
                     if (isset($item['source_type']) && $item['source_type'] === 'website_content') {
                         // If crawler is enabled, include all website_content; if disabled, only include if in manual_pages
@@ -245,10 +250,12 @@ class WP_GPT_Chatbot_API {
                         $manual_entries[] = $item;
                     }
                 }
+                
                 // Add manual entries first
                 foreach ($manual_entries as $item) {
                     $content .= "Q: {$item['question']}\nA: {$item['answer']}\n\n";
                 }
+                
                 // Add manually included pages (when crawler is off)
                 if (!empty($manual_page_entries)) {
                     $content .= "\n\nIncluded website pages:\n\n";
@@ -256,6 +263,7 @@ class WP_GPT_Chatbot_API {
                         $content .= "Q: {$item['question']}\nA: {$item['answer']}\n\n";
                     }
                 }
+                
                 // Add website content entries (when crawler is on)
                 if ($website_content_enabled && !empty($website_entries)) {
                     $content .= "\n\nAdditional website information:\n\n";
@@ -263,6 +271,24 @@ class WP_GPT_Chatbot_API {
                         $content .= "Q: {$item['question']}\nA: {$item['answer']}\n\n";
                     }
                 }
+                
+                // Add relevant media coverage
+                if (!empty($relevant_media)) {
+                    $content .= "\n\nRelevant Media Coverage:\n\n";
+                    foreach ($relevant_media as $item) {
+                        $content .= "Media Outlet: " . ($item['outlet'] ?? 'Unknown') . "\n";
+                        $content .= "Topic: " . ($item['topic'] ?? 'N/A') . "\n";
+                        $content .= "Date: " . ($item['date'] ?? 'N/A') . "\n";
+                        if (!empty($item['url'])) {
+                            $content .= "URL: " . $item['url'] . "\n";
+                        }
+                        if (!empty($item['notes'])) {
+                            $content .= "Notes: " . $item['notes'] . "\n";
+                        }
+                        $content .= "\n";
+                    }
+                }
+                
                 $content .= "--- END OF YOUR COMPLETE KNOWLEDGE BASE ---\n\n";
                 $content .= "REMINDER: You can ONLY answer questions using the information between the START and END markers above. Do not use any other knowledge.";
             } else {
@@ -293,6 +319,24 @@ class WP_GPT_Chatbot_API {
                     $content .= "Q: {$item['question']}\nA: {$item['answer']}\n\n";
                 }
             }
+            
+            // Add all media coverage when not using selective context
+            if (!empty($media_coverage)) {
+                $content .= "\n\nMedia Coverage Database:\n\n";
+                foreach (array_slice($media_coverage, 0, 20) as $item) { // Limit to 20 for token management
+                    $content .= "Media Outlet: " . ($item['outlet'] ?? 'Unknown') . "\n";
+                    $content .= "Topic: " . ($item['topic'] ?? 'N/A') . "\n";
+                    $content .= "Date: " . ($item['date'] ?? 'N/A') . "\n";
+                    if (!empty($item['url'])) {
+                        $content .= "URL: " . $item['url'] . "\n";
+                    }
+                    if (!empty($item['notes'])) {
+                        $content .= "Notes: " . $item['notes'] . "\n";
+                    }
+                    $content .= "\n";
+                }
+            }
+            
             $content .= "--- END OF YOUR COMPLETE KNOWLEDGE BASE ---\n\n";
             $content .= "REMINDER: You can ONLY answer questions using the information between the START and END markers above. Do not use any other knowledge.";
         }
@@ -883,5 +927,140 @@ class WP_GPT_Chatbot_API {
         }
         
         return trim($normalized);
+    }
+    
+    /**
+     * Get relevant media coverage entries based on the user's query
+     * 
+     * @param string $query The user's question
+     * @param array $media_coverage Array of media coverage entries
+     * @return array Relevant media coverage entries
+     */
+    private function get_relevant_media_coverage($query, $media_coverage) {
+        if (empty($media_coverage) || empty($query)) {
+            return array();
+        }
+        
+        $query_lower = strtolower($query);
+        $relevant_entries = array();
+        
+        // Keywords that suggest the user is asking about media coverage
+        $media_keywords = array(
+            'media', 'coverage', 'news', 'article', 'press', 'publication', 
+            'outlet', 'featured', 'mentioned', 'published', 'interviewed',
+            'story', 'report', 'journalist', 'magazine', 'newspaper',
+            'blog', 'interview', 'podcast', 'tv', 'radio', 'website'
+        );
+        
+        $is_media_query = false;
+        foreach ($media_keywords as $keyword) {
+            if (strpos($query_lower, $keyword) !== false) {
+                $is_media_query = true;
+                break;
+            }
+        }
+        
+        // If not obviously a media query, be more selective
+        if (!$is_media_query) {
+            // Only include if query terms match topics or outlets
+            foreach ($media_coverage as $item) {
+                $topic = strtolower($item['topic'] ?? '');
+                $outlet = strtolower($item['outlet'] ?? '');
+                $notes = strtolower($item['notes'] ?? '');
+                
+                // Check for topic/outlet matches
+                $query_words = explode(' ', $query_lower);
+                $match_score = 0;
+                
+                foreach ($query_words as $word) {
+                    $word = trim($word);
+                    if (strlen($word) < 3) continue; // Skip short words
+                    
+                    if (strpos($topic, $word) !== false) $match_score += 2;
+                    if (strpos($outlet, $word) !== false) $match_score += 2;
+                    if (strpos($notes, $word) !== false) $match_score += 1;
+                }
+                
+                if ($match_score >= 2) {
+                    $relevant_entries[] = $item;
+                }
+            }
+            
+            // Limit results for non-media queries
+            return array_slice($relevant_entries, 0, 3);
+        }
+        
+        // For media-related queries, include more entries
+        foreach ($media_coverage as $item) {
+            $topic = strtolower($item['topic'] ?? '');
+            $outlet = strtolower($item['outlet'] ?? '');
+            $notes = strtolower($item['notes'] ?? '');
+            
+            $query_words = explode(' ', $query_lower);
+            $match_score = 0;
+            
+            foreach ($query_words as $word) {
+                $word = trim($word);
+                if (strlen($word) < 3) continue;
+                
+                if (strpos($topic, $word) !== false) $match_score += 3;
+                if (strpos($outlet, $word) !== false) $match_score += 2;
+                if (strpos($notes, $word) !== false) $match_score += 1;
+            }
+            
+            // Lower threshold for media queries
+            if ($match_score >= 1) {
+                $relevant_entries[] = $item;
+            }
+        }
+        
+        // Sort by relevance (basic scoring)
+        usort($relevant_entries, function($a, $b) use ($query_lower) {
+            $score_a = $this->calculate_media_relevance_score($a, $query_lower);
+            $score_b = $this->calculate_media_relevance_score($b, $query_lower);
+            return $score_b - $score_a;
+        });
+        
+        // Return top 10 most relevant entries
+        return array_slice($relevant_entries, 0, 10);
+    }
+    
+    /**
+     * Calculate relevance score for media coverage item
+     * 
+     * @param array $item Media coverage item
+     * @param string $query_lower Lowercase query
+     * @return int Relevance score
+     */
+    private function calculate_media_relevance_score($item, $query_lower) {
+        $score = 0;
+        $topic = strtolower($item['topic'] ?? '');
+        $outlet = strtolower($item['outlet'] ?? '');
+        $notes = strtolower($item['notes'] ?? '');
+        
+        $query_words = explode(' ', $query_lower);
+        
+        foreach ($query_words as $word) {
+            $word = trim($word);
+            if (strlen($word) < 3) continue;
+            
+            // Higher scores for exact word matches
+            if (strpos($topic, $word) !== false) $score += 5;
+            if (strpos($outlet, $word) !== false) $score += 3;
+            if (strpos($notes, $word) !== false) $score += 2;
+        }
+        
+        // Boost score for recent dates (if date is available and parseable)
+        if (!empty($item['date'])) {
+            $date = strtotime($item['date']);
+            if ($date !== false) {
+                $days_ago = (time() - $date) / (24 * 60 * 60);
+                if ($days_ago < 30) $score += 3; // Recent content
+                elseif ($days_ago < 90) $score += 2; // Moderately recent
+                elseif ($days_ago < 365) $score += 1; // Within a year
+            }
+        }
+        
+        return $score;
     }
 }

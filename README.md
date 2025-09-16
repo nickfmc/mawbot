@@ -120,6 +120,60 @@ The Website Content Crawler is particularly useful for:
 - Sites with product information, FAQs, or documentation
 - Reducing the manual effort of training your chatbot
 
+### Media Coverage Management
+
+The Media Coverage feature allows you to upload and manage information about your company's media appearances, press coverage, and news mentions:
+
+#### Uploading Media Coverage
+
+1. Go to WordPress admin panel > GPT Chatbot
+2. Scroll to the "Media Coverage Management" section
+3. Click "Choose File" and select a CSV file with your media coverage data
+4. Click "Upload and Preview" to review the data before saving
+5. Review the preview table and click "Confirm and Save" if everything looks correct
+
+#### CSV File Format
+
+Your CSV file should include the following columns:
+- **Outlet**: Name of the media outlet (e.g., "TechCrunch", "Forbes", "BBC")
+- **Topic**: The main topic or subject of the coverage (e.g., "AI Innovation", "Product Launch")
+- **Date**: Date of publication (any standard date format)
+- **URL**: Direct link to the article or coverage
+- **Notes**: Additional details, quotes, or context about the coverage
+
+Example CSV format:
+```csv
+Outlet,Topic,Date,URL,Notes
+TechCrunch,AI Innovation,2024-01-15,https://techcrunch.com/example,"Featured our new AI chatbot technology"
+Forbes,Business Strategy,2024-01-05,https://forbes.com/example,"CEO interview about company growth"
+The Verge,Product Launch,2023-12-15,https://theverge.com/example,"Review of our latest product release"
+```
+
+#### How Media Coverage Enhances Chatbot Responses
+
+When users ask questions related to media coverage, the chatbot will:
+- Automatically identify media-related queries (questions containing words like "media", "coverage", "news", "featured", etc.)
+- Include relevant media coverage information in its knowledge base
+- Provide specific details about outlets, dates, and topics
+- Include links to actual coverage when available
+- Prioritize recent coverage over older entries
+
+#### Sample Media Coverage File
+
+A sample CSV file (`sample-media-coverage.csv`) is included with the plugin to demonstrate the expected format and help you get started.
+
+#### Managing Media Coverage
+
+- **View Current Coverage**: The admin page shows your current media coverage entries with outlet, topic, date, and links
+- **Clear All Data**: Use the "Clear All Media Coverage" button to remove all entries
+- **Update Coverage**: Simply upload a new CSV file to replace the existing data
+
+This feature is particularly useful for:
+- Startups and companies that want to showcase their media presence
+- PR teams managing multiple media appearances
+- Organizations that want their chatbot to reference specific coverage
+- Building credibility by mentioning legitimate media mentions
+
 ## Token Usage Optimization
 
 WP GPT Chatbot includes several features to optimize token usage and improve response performance when using the OpenAI API:

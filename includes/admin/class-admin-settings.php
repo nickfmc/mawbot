@@ -27,6 +27,11 @@ class WP_GPT_Chatbot_Admin_Settings {
         add_action('wp_ajax_wp_gpt_chatbot_download_logs', array($this, 'ajax_download_logs'));
         add_action('wp_ajax_wp_gpt_chatbot_clear_logs', array($this, 'ajax_clear_logs'));
         
+        // Add AJAX handlers for media coverage
+        add_action('wp_ajax_wp_gpt_chatbot_upload_media_coverage', array($this, 'ajax_upload_media_coverage'));
+        add_action('wp_ajax_wp_gpt_chatbot_save_media_coverage', array($this, 'ajax_save_media_coverage'));
+        add_action('wp_ajax_wp_gpt_chatbot_clear_media_coverage', array($this, 'ajax_clear_media_coverage'));
+        
         // Ensure question logs table exists
         add_action('admin_init', array($this, 'ensure_question_logs_table'));
         
@@ -344,6 +349,178 @@ class WP_GPT_Chatbot_Admin_Settings {
             
             require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
             dbDelta($sql);
+        }
+    }
+    
+    /**
+     * AJAX handler for uploading and previewing media coverage CSV
+     */
+    public function ajax_upload_media_coverage() {
+        check_ajax_referer('wp_gpt_chatbot_media_coverage', 'media_coverage_nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permission denied');
+            return;
+        }
+        
+        if (!isset($_FILES['media_coverage_file']) || $_FILES['media_coverage_file']['error'] !== UPLOAD_ERR_OK) {
+            wp_send_json_error('Error uploading file');
+            return;
+        }
+        
+        $file = $_FILES['media_coverage_file'];
+        
+        // Validate file type
+        if (pathinfo($file['name'], PATHINFO_EXTENSION) !== 'csv') {
+            wp_send_json_error('Please upload a CSV file');
+            return;
+        }
+        
+        $handle = fopen($file['tmp_name'], 'r');
+        if (!$handle) {
+            wp_send_json_error('Could not read CSV file');
+            return;
+        }
+        
+        $data = array();
+        $headers = array();
+        $row_count = 0;
+        
+        // Read CSV data
+        while (($row = fgetcsv($handle)) !== false) {
+            if ($row_count === 0) {
+                // Store headers
+                $headers = array_map('trim', $row);
+                $row_count++;
+                continue;
+            }
+            
+            // Process data rows (limit to first 100 for preview)
+            if ($row_count <= 100) {
+                $item = array();
+                foreach ($headers as $index => $header) {
+                    $item[strtolower(str_replace(' ', '_', trim($header)))] = isset($row[$index]) ? trim($row[$index]) : '';
+                }
+                $data[] = $item;
+            }
+            $row_count++;
+        }
+        
+        fclose($handle);
+        
+        if (empty($data)) {
+            wp_send_json_error('No valid data found in CSV file');
+            return;
+        }
+        
+        // Generate preview HTML
+        $preview_html = '<p>' . sprintf('Found %d entries in CSV file. Showing first %d for preview:', $row_count - 1, min(count($data), 10)) . '</p>';
+        $preview_html .= '<table class="wp-list-table widefat fixed striped">';
+        $preview_html .= '<thead><tr>';
+        
+        // Use expected columns or detected headers
+        $display_headers = array('outlet', 'topic', 'date', 'url', 'notes');
+        foreach ($display_headers as $header) {
+            $preview_html .= '<th>' . ucfirst(str_replace('_', ' ', $header)) . '</th>';
+        }
+        $preview_html .= '</tr></thead><tbody>';
+        
+        foreach (array_slice($data, 0, 10) as $item) {
+            $preview_html .= '<tr>';
+            foreach ($display_headers as $header) {
+                $value = isset($item[$header]) ? esc_html($item[$header]) : '-';
+                if ($header === 'url' && !empty($item[$header])) {
+                    $value = '<a href="' . esc_url($item[$header]) . '" target="_blank">View</a>';
+                }
+                $preview_html .= '<td>' . $value . '</td>';
+            }
+            $preview_html .= '</tr>';
+        }
+        
+        $preview_html .= '</tbody></table>';
+        
+        // Read entire file again to get all data
+        fseek($handle = fopen($file['tmp_name'], 'r'), 0);
+        $all_data = array();
+        $row_count = 0;
+        
+        while (($row = fgetcsv($handle)) !== false) {
+            if ($row_count === 0) {
+                $row_count++;
+                continue;
+            }
+            
+            $item = array();
+            foreach ($headers as $index => $header) {
+                $item[strtolower(str_replace(' ', '_', trim($header)))] = isset($row[$index]) ? trim($row[$index]) : '';
+            }
+            $all_data[] = $item;
+            $row_count++;
+        }
+        
+        fclose($handle);
+        
+        wp_send_json_success(array(
+            'message' => sprintf('Successfully parsed %d entries from CSV file.', count($all_data)),
+            'preview' => $preview_html,
+            'data' => $all_data
+        ));
+    }
+    
+    /**
+     * AJAX handler for saving media coverage data
+     */
+    public function ajax_save_media_coverage() {
+        check_ajax_referer('wp_gpt_chatbot_media_coverage', 'media_coverage_nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permission denied');
+            return;
+        }
+        
+        if (!isset($_POST['data']) || !is_array($_POST['data'])) {
+            wp_send_json_error('No data provided');
+            return;
+        }
+        
+        $data = array_map(function($item) {
+            return array_map('sanitize_text_field', $item);
+        }, $_POST['data']);
+        
+        // Get current settings
+        $settings = get_option('wp_gpt_chatbot_settings', array());
+        $settings['media_coverage'] = $data;
+        
+        $updated = update_option('wp_gpt_chatbot_settings', $settings);
+        
+        if ($updated) {
+            wp_send_json_success(sprintf('Successfully saved %d media coverage entries.', count($data)));
+        } else {
+            wp_send_json_error('Error saving media coverage data');
+        }
+    }
+    
+    /**
+     * AJAX handler for clearing media coverage data
+     */
+    public function ajax_clear_media_coverage() {
+        check_ajax_referer('wp_gpt_chatbot_media_coverage', 'media_coverage_nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permission denied');
+            return;
+        }
+        
+        // Get current settings and clear media coverage
+        $settings = get_option('wp_gpt_chatbot_settings', array());
+        $settings['media_coverage'] = array();
+        
+        $updated = update_option('wp_gpt_chatbot_settings', $settings);
+        
+        if ($updated) {
+            wp_send_json_success('Media coverage data cleared successfully.');
+        } else {
+            wp_send_json_error('Error clearing media coverage data');
         }
     }
 }

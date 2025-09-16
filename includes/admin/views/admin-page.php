@@ -90,6 +90,50 @@ if (isset($_GET['action']) && $_GET['action'] === 'remove_training' && isset($_G
     }
 }
 
+// Handle editing training material
+if (isset($_POST['action']) && $_POST['action'] === 'edit_training' && isset($_POST['training_index']) && isset($_POST['edit_training_question']) && isset($_POST['edit_training_answer'])) {
+    check_admin_referer('wp_gpt_chatbot_edit_training');
+    
+    $index = intval($_POST['training_index']);
+    $question = sanitize_text_field($_POST['edit_training_question']);
+    $answer = sanitize_textarea_field($_POST['edit_training_answer']);
+    
+    if (!empty($question) && !empty($answer)) {
+        // Get the latest settings directly from database to bypass caching
+        global $wpdb;
+        $option_name = 'wp_gpt_chatbot_settings';
+        $row = $wpdb->get_row($wpdb->prepare("SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1", $option_name));
+        $current_settings = $row ? maybe_unserialize($row->option_value) : array();
+        
+        // Make sure it's an array
+        if (!is_array($current_settings)) {
+            $current_settings = array();
+        }
+        
+        if (!isset($current_settings['training_data']) || !is_array($current_settings['training_data'])) {
+            $current_settings['training_data'] = array();
+        }
+        
+        if (isset($current_settings['training_data'][$index])) {
+            // Update the existing training material
+            $current_settings['training_data'][$index]['question'] = $question;
+            $current_settings['training_data'][$index]['answer'] = $answer;
+            $current_settings['training_data'][$index]['updated_at'] = current_time('mysql');
+            
+            update_option('wp_gpt_chatbot_settings', $current_settings);
+            
+            // Update the settings variable for the current page display
+            $settings = $current_settings;
+            
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Training material updated successfully.', 'wp-gpt-chatbot') . '</p></div>';
+        } else {
+            echo '<div class="notice notice-error is-dismissible"><p>' . esc_html__('Training material not found.', 'wp-gpt-chatbot') . '</p></div>';
+        }
+    } else {
+        echo '<div class="notice notice-error is-dismissible"><p>' . esc_html__('Question and answer are required.', 'wp-gpt-chatbot') . '</p></div>';
+    }
+}
+
 // Handle importing training material from CSV
 if (isset($_POST['import_training']) && isset($_FILES['training_csv'])) {
     check_admin_referer('wp_gpt_chatbot_import_training');
@@ -421,6 +465,193 @@ if (isset($_POST['import_training']) && isset($_FILES['training_csv'])) {
         <?php submit_button(__('Save Settings', 'wp-gpt-chatbot')); ?>
     </form>
     
+    <h2><?php echo esc_html__('Media Coverage Management', 'wp-gpt-chatbot'); ?></h2>
+    <p class="description"><?php echo esc_html__('Upload and manage your media coverage data. The CSV file should contain columns for outlet, topic, date, URL, etc.', 'wp-gpt-chatbot'); ?></p>
+    
+    <div class="wp-gpt-chatbot-card">
+        <h3><?php echo esc_html__('Upload Media Coverage CSV', 'wp-gpt-chatbot'); ?></h3>
+        <form id="media-coverage-upload-form" enctype="multipart/form-data">
+            <?php wp_nonce_field('wp_gpt_chatbot_media_coverage', 'media_coverage_nonce'); ?>
+            <table class="form-table">
+                <tr>
+                    <th scope="row">
+                        <label for="media_coverage_file"><?php echo esc_html__('CSV File', 'wp-gpt-chatbot'); ?></label>
+                    </th>
+                    <td>
+                        <input type="file" id="media_coverage_file" name="media_coverage_file" accept=".csv" required>
+                        <p class="description"><?php echo esc_html__('Upload a CSV file with your media coverage data. Expected columns: Outlet, Topic, Date, URL, Notes.', 'wp-gpt-chatbot'); ?></p>
+                    </td>
+                </tr>
+            </table>
+            <p>
+                <input type="submit" class="button button-primary" value="<?php echo esc_attr__('Upload and Preview', 'wp-gpt-chatbot'); ?>">
+                <button type="button" id="clear-media-coverage" class="button button-secondary"><?php echo esc_html__('Clear All Media Coverage', 'wp-gpt-chatbot'); ?></button>
+            </p>
+            <div id="media-coverage-status"></div>
+        </form>
+        
+        <div id="media-coverage-preview" style="display: none;">
+            <h4><?php echo esc_html__('Preview Data', 'wp-gpt-chatbot'); ?></h4>
+            <div id="media-coverage-preview-content"></div>
+            <p>
+                <button type="button" id="confirm-media-coverage" class="button button-primary"><?php echo esc_html__('Confirm and Save', 'wp-gpt-chatbot'); ?></button>
+                <button type="button" id="cancel-media-coverage" class="button button-secondary"><?php echo esc_html__('Cancel', 'wp-gpt-chatbot'); ?></button>
+            </p>
+        </div>
+    </div>
+    
+    <div class="wp-gpt-chatbot-card">
+        <h3><?php echo esc_html__('Current Media Coverage', 'wp-gpt-chatbot'); ?></h3>
+        <div id="current-media-coverage">
+            <?php
+            $media_coverage = isset($settings['media_coverage']) ? $settings['media_coverage'] : array();
+            if (empty($media_coverage)):
+            ?>
+                <p><?php echo esc_html__('No media coverage data found.', 'wp-gpt-chatbot'); ?></p>
+            <?php else: ?>
+                <p><?php echo sprintf(esc_html__('Total entries: %d', 'wp-gpt-chatbot'), count($media_coverage)); ?></p>
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th><?php echo esc_html__('Outlet', 'wp-gpt-chatbot'); ?></th>
+                            <th><?php echo esc_html__('Topic', 'wp-gpt-chatbot'); ?></th>
+                            <th><?php echo esc_html__('Date', 'wp-gpt-chatbot'); ?></th>
+                            <th><?php echo esc_html__('URL', 'wp-gpt-chatbot'); ?></th>
+                            <th><?php echo esc_html__('Notes', 'wp-gpt-chatbot'); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach (array_slice($media_coverage, 0, 10) as $item): ?>
+                            <tr>
+                                <td><?php echo esc_html($item['outlet'] ?? ''); ?></td>
+                                <td><?php echo esc_html($item['topic'] ?? ''); ?></td>
+                                <td><?php echo esc_html($item['date'] ?? ''); ?></td>
+                                <td>
+                                    <?php if (!empty($item['url'])): ?>
+                                        <a href="<?php echo esc_url($item['url']); ?>" target="_blank"><?php echo esc_html__('View', 'wp-gpt-chatbot'); ?></a>
+                                    <?php else: ?>
+                                        -
+                                    <?php endif; ?>
+                                </td>
+                                <td><?php echo esc_html(substr($item['notes'] ?? '', 0, 100) . (strlen($item['notes'] ?? '') > 100 ? '...' : '')); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php if (count($media_coverage) > 10): ?>
+                    <p><?php echo sprintf(esc_html__('Showing first 10 of %d entries.', 'wp-gpt-chatbot'), count($media_coverage)); ?></p>
+                <?php endif; ?>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <script>
+    jQuery(document).ready(function($) {
+        // Media coverage upload handling
+        $('#media-coverage-upload-form').on('submit', function(e) {
+            e.preventDefault();
+            
+            var formData = new FormData();
+            var fileInput = $('#media_coverage_file')[0];
+            
+            if (!fileInput.files.length) {
+                $('#media-coverage-status').html('<div class="notice notice-error"><p><?php echo esc_js(__('Please select a CSV file.', 'wp-gpt-chatbot')); ?></p></div>');
+                return;
+            }
+            
+            formData.append('action', 'wp_gpt_chatbot_upload_media_coverage');
+            formData.append('media_coverage_nonce', $('#media_coverage_nonce').val());
+            formData.append('media_coverage_file', fileInput.files[0]);
+            
+            $('#media-coverage-status').html('<p><?php echo esc_js(__('Processing file...', 'wp-gpt-chatbot')); ?></p>');
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(response) {
+                    if (response.success) {
+                        $('#media-coverage-preview-content').html(response.data.preview);
+                        $('#media-coverage-preview').show();
+                        $('#media-coverage-status').html('<div class="notice notice-success"><p>' + response.data.message + '</p></div>');
+                        
+                        // Store the data for confirmation
+                        $('#media-coverage-upload-form').data('preview-data', response.data.data);
+                    } else {
+                        $('#media-coverage-status').html('<div class="notice notice-error"><p>' + response.data + '</p></div>');
+                    }
+                },
+                error: function() {
+                    $('#media-coverage-status').html('<div class="notice notice-error"><p><?php echo esc_js(__('Error processing file.', 'wp-gpt-chatbot')); ?></p></div>');
+                }
+            });
+        });
+        
+        // Confirm media coverage data
+        $('#confirm-media-coverage').on('click', function() {
+            var data = $('#media-coverage-upload-form').data('preview-data');
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'wp_gpt_chatbot_save_media_coverage',
+                    media_coverage_nonce: $('#media_coverage_nonce').val(),
+                    data: data
+                },
+                success: function(response) {
+                    if (response.success) {
+                        $('#media-coverage-status').html('<div class="notice notice-success"><p>' + response.data + '</p></div>');
+                        $('#media-coverage-preview').hide();
+                        location.reload(); // Refresh to show updated data
+                    } else {
+                        $('#media-coverage-status').html('<div class="notice notice-error"><p>' + response.data + '</p></div>');
+                    }
+                },
+                error: function() {
+                    $('#media-coverage-status').html('<div class="notice notice-error"><p><?php echo esc_js(__('Error saving data.', 'wp-gpt-chatbot')); ?></p></div>');
+                }
+            });
+        });
+        
+        // Cancel preview
+        $('#cancel-media-coverage').on('click', function() {
+            $('#media-coverage-preview').hide();
+            $('#media-coverage-status').empty();
+            $('#media_coverage_file').val('');
+        });
+        
+        // Clear all media coverage
+        $('#clear-media-coverage').on('click', function() {
+            if (!confirm('<?php echo esc_js(__('Are you sure you want to clear all media coverage data? This action cannot be undone.', 'wp-gpt-chatbot')); ?>')) {
+                return;
+            }
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'wp_gpt_chatbot_clear_media_coverage',
+                    media_coverage_nonce: $('#media_coverage_nonce').val()
+                },
+                success: function(response) {
+                    if (response.success) {
+                        $('#media-coverage-status').html('<div class="notice notice-success"><p>' + response.data + '</p></div>');
+                        location.reload(); // Refresh to show cleared data
+                    } else {
+                        $('#media-coverage-status').html('<div class="notice notice-error"><p>' + response.data + '</p></div>');
+                    }
+                },
+                error: function() {
+                    $('#media-coverage-status').html('<div class="notice notice-error"><p><?php echo esc_js(__('Error clearing data.', 'wp-gpt-chatbot')); ?></p></div>');
+                }
+            });
+        });
+    });
+    </script>
+    
     <h2><?php echo esc_html__('Training Material Management', 'wp-gpt-chatbot'); ?></h2>
         <p class="description"><?php echo esc_html__('Add question-answer pairs to train your chatbot with specific knowledge. The more specific entries you add, the better your chatbot will become at answering related questions.', 'wp-gpt-chatbot'); ?></p>
         
@@ -533,6 +764,7 @@ if (isset($_POST['import_training']) && isset($_FILES['training_csv'])) {
                                 <td><?php echo isset($item['added_at']) ? esc_html(date_i18n(get_option('date_format'), strtotime($item['added_at']))) : '-'; ?></td>
                                 <td><?php echo esc_html($source_display); ?></td>
                                 <td>
+                                    <a href="#" class="edit-training-item" data-index="<?php echo esc_attr($item['original_index']); ?>" data-question="<?php echo esc_attr($item['question']); ?>" data-answer="<?php echo esc_attr($item['answer']); ?>"><?php echo esc_html__('Edit', 'wp-gpt-chatbot'); ?></a> | 
                                     <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=wp-gpt-chatbot&action=remove_training&index=' . $item['original_index']), 'remove_training_' . $item['original_index'])); ?>" class="button-link-delete" onclick="return confirm('<?php echo esc_js(__('Are you sure you want to remove this training material?', 'wp-gpt-chatbot')); ?>')"><?php echo esc_html__('Remove', 'wp-gpt-chatbot'); ?></a>
                                 </td>
                             </tr>
@@ -540,6 +772,41 @@ if (isset($_POST['import_training']) && isset($_FILES['training_csv'])) {
                     </tbody>
                 </table>
             <?php endif; ?>
+        </div>
+        
+        <!-- Edit Training Material Modal -->
+        <div id="edit-training-modal" class="wp-gpt-chatbot-modal" style="display: none;">
+            <div class="wp-gpt-chatbot-modal-content">
+                <span class="wp-gpt-chatbot-modal-close">&times;</span>
+                <h2><?php echo esc_html__('Edit Training Material', 'wp-gpt-chatbot'); ?></h2>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=wp-gpt-chatbot')); ?>">
+                    <?php wp_nonce_field('wp_gpt_chatbot_edit_training'); ?>
+                    <input type="hidden" name="action" value="edit_training">
+                    <input type="hidden" name="training_index" id="edit-training-index" value="">
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row">
+                                <label for="edit_training_question"><?php echo esc_html__('Question', 'wp-gpt-chatbot'); ?></label>
+                            </th>
+                            <td>
+                                <input type="text" id="edit_training_question" name="edit_training_question" class="regular-text" required>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">
+                                <label for="edit_training_answer"><?php echo esc_html__('Answer', 'wp-gpt-chatbot'); ?></label>
+                            </th>
+                            <td>
+                                <textarea id="edit_training_answer" name="edit_training_answer" rows="4" class="large-text" required></textarea>
+                            </td>
+                        </tr>
+                    </table>
+                    <p>
+                        <button type="submit" class="button button-primary"><?php echo esc_html__('Update Training Material', 'wp-gpt-chatbot'); ?></button>
+                        <button type="button" class="button wp-gpt-chatbot-modal-cancel"><?php echo esc_html__('Cancel', 'wp-gpt-chatbot'); ?></button>
+                    </p>
+                </form>
+            </div>
         </div>
         
         <style>
@@ -555,6 +822,73 @@ if (isset($_POST['import_training']) && isset($_FILES['training_csv'])) {
                 padding-bottom: 10px;
                 border-bottom: 1px solid #eee;
             }
+            
+            .wp-gpt-chatbot-modal {
+                display: none;
+                position: fixed;
+                z-index: 100000;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                overflow: auto;
+                background-color: rgba(0,0,0,0.4);
+            }
+            
+            .wp-gpt-chatbot-modal-content {
+                background-color: #fefefe;
+                margin: 15% auto;
+                padding: 20px;
+                border: 1px solid #888;
+                width: 80%;
+                max-width: 600px;
+                border-radius: 5px;
+            }
+            
+            .wp-gpt-chatbot-modal-close {
+                color: #aaa;
+                float: right;
+                font-size: 28px;
+                font-weight: bold;
+                cursor: pointer;
+            }
+            
+            .wp-gpt-chatbot-modal-close:hover,
+            .wp-gpt-chatbot-modal-close:focus {
+                color: black;
+                text-decoration: none;
+            }
         </style>
+        
+        <script>
+        jQuery(document).ready(function($) {
+            // Edit training material functionality
+            $('.edit-training-item').on('click', function(e) {
+                e.preventDefault();
+                
+                var index = $(this).data('index');
+                var question = $(this).data('question');
+                var answer = $(this).data('answer');
+                
+                $('#edit-training-index').val(index);
+                $('#edit_training_question').val(question);
+                $('#edit_training_answer').val(answer);
+                
+                $('#edit-training-modal').show();
+            });
+            
+            // Close modal functionality
+            $('.wp-gpt-chatbot-modal-close, .wp-gpt-chatbot-modal-cancel').on('click', function() {
+                $('#edit-training-modal').hide();
+            });
+            
+            // Close modal when clicking outside
+            $(window).on('click', function(e) {
+                if ($(e.target).is('#edit-training-modal')) {
+                    $('#edit-training-modal').hide();
+                }
+            });
+        });
+        </script>
     </div>
 </div>

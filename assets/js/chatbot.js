@@ -283,6 +283,18 @@
             { pattern: /\bwhat brands do you (represent|serve|work with|have)\b/gi, replacement: `what brands does ${botName} $1` },
             { pattern: /\bwho do you (serve|help|work with|represent)\b/gi, replacement: `who does ${botName} $1` },
             
+            // Additional PAN-specific patterns
+            { pattern: /\bwhat industries do you (serve|work in|focus on|specialize in)\b/gi, replacement: `what industries does ${botName} $1` },
+            { pattern: /\bwhat sectors do you (serve|work in|focus on|specialize in)\b/gi, replacement: `what sectors does ${botName} $1` },
+            { pattern: /\bwhat companies do you (work with|represent|serve)\b/gi, replacement: `what companies does ${botName} $1` },
+            { pattern: /\bwhere are you (located|based|headquartered)\b/gi, replacement: `where is ${botName} $1` },
+            { pattern: /\bhow big are you\b/gi, replacement: `how big is ${botName}` },
+            { pattern: /\bhow large are you\b/gi, replacement: `how large is ${botName}` },
+            { pattern: /\bwhat makes you (different|unique|special)\b/gi, replacement: `what makes ${botName} $1` },
+            { pattern: /\bwhy should I (choose|hire|work with) you\b/gi, replacement: `why should I $1 ${botName}` },
+            { pattern: /\bcan you help (me|us|my company)\b/gi, replacement: `can ${botName} help $1` },
+            { pattern: /\bdo you work with (startups|small businesses|enterprises|nonprofits)\b/gi, replacement: `does ${botName} work with $1` },
+            
             // Questions about experience/history
             { pattern: /\bhow long have you been\b/gi, replacement: `how long has ${botName} been` },
             { pattern: /\bwhen did you (start|begin|establish|found)\b/gi, replacement: `when did ${botName} $1` }
