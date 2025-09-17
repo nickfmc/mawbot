@@ -32,6 +32,9 @@ class WP_GPT_Chatbot_Admin_Settings {
         add_action('wp_ajax_wp_gpt_chatbot_save_media_coverage', array($this, 'ajax_save_media_coverage'));
         add_action('wp_ajax_wp_gpt_chatbot_clear_media_coverage', array($this, 'ajax_clear_media_coverage'));
         
+        // Add AJAX handler for exporting training data
+        add_action('wp_ajax_wp_gpt_chatbot_export_training', array($this, 'ajax_export_training'));
+        
         // Ensure question logs table exists
         add_action('admin_init', array($this, 'ensure_question_logs_table'));
         
@@ -522,5 +525,69 @@ class WP_GPT_Chatbot_Admin_Settings {
         } else {
             wp_send_json_error('Error clearing media coverage data');
         }
+    }
+    
+    /**
+     * AJAX handler for exporting training data
+     */
+    public function ajax_export_training() {
+        check_ajax_referer('wp_gpt_chatbot_admin_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permission denied');
+            return;
+        }
+        
+        // Get current settings directly from database to bypass caching
+        global $wpdb;
+        $option_name = 'wp_gpt_chatbot_settings';
+        $row = $wpdb->get_row($wpdb->prepare("SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1", $option_name));
+        $settings = $row ? maybe_unserialize($row->option_value) : array();
+        $training_data = isset($settings['training_data']) ? $settings['training_data'] : array();
+        
+        if (empty($training_data)) {
+            wp_send_json_error('No training data found to export');
+            return;
+        }
+        
+        // Filter to only export manual and imported entries (exclude website content)
+        $exportable_data = array();
+        foreach ($training_data as $item) {
+            if (!isset($item['source_type']) || $item['source_type'] !== 'website_content') {
+                $exportable_data[] = $item;
+            }
+        }
+        
+        if (empty($exportable_data)) {
+            wp_send_json_error('No manual or imported training data found to export');
+            return;
+        }
+        
+        // Generate CSV content
+        $csv_content = "Question,Answer,Added Date,Source\n";
+        
+        foreach ($exportable_data as $item) {
+            $question = isset($item['question']) ? str_replace('"', '""', $item['question']) : '';
+            $answer = isset($item['answer']) ? str_replace('"', '""', $item['answer']) : '';
+            $added_date = isset($item['added_at']) ? $item['added_at'] : '';
+            $source = isset($item['source_type']) ? 
+                ($item['source_type'] === 'import' ? 'CSV Import' : 'Manual Entry') : 
+                'Manual Entry';
+            
+            $csv_content .= sprintf('"%s","%s","%s","%s"' . "\n", 
+                $question, 
+                $answer, 
+                $added_date, 
+                $source
+            );
+        }
+        
+        $filename = 'chatbot-training-data-' . date('Y-m-d-H-i-s') . '.csv';
+        
+        wp_send_json_success(array(
+            'csv' => $csv_content,
+            'filename' => $filename,
+            'count' => count($exportable_data)
+        ));
     }
 }

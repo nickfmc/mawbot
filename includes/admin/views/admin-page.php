@@ -1,7 +1,24 @@
 <?php
 /**
- * Admin Settings Page
- *
+ * Admin Se// Handle success messages from redirects
+if (isset($_GET['updated'])) {
+    // Force clear all caches when showing updated message
+    wp_cache_delete('wp_gpt_chatbot_settings', 'options');
+    wp_cache_flush();
+    delete_transient('wp_gpt_chatbot_settings');
+    
+    switch ($_GET['updated']) {
+        case 'training_edited':
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Training material updated successfully.', 'wp-gpt-chatbot') . '</p></div>';
+            break;
+        case 'training_added':
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Training material added successfully.', 'wp-gpt-chatbot') . '</p></div>';
+            break;
+        case 'training_removed':
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Training material removed successfully.', 'wp-gpt-chatbot') . '</p></div>';
+            break;
+    }
+}*
  * @package WP_GPT_Chatbot
  */
 
@@ -16,9 +33,30 @@ $option_name = 'wp_gpt_chatbot_settings';
 $row = $wpdb->get_row($wpdb->prepare("SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1", $option_name));
 $settings = $row ? maybe_unserialize($row->option_value) : array();
 
+// Additional cache clearing to ensure we get fresh data
+wp_cache_delete('wp_gpt_chatbot_settings', 'options');
+if (function_exists('wp_cache_delete')) {
+    wp_cache_delete('alloptions', 'options');
+}
+
 // Initialize training_data if it doesn't exist
 if (!isset($settings['training_data']) || !is_array($settings['training_data'])) {
     $settings['training_data'] = array();
+}
+
+// Handle success messages from redirects
+if (isset($_GET['updated'])) {
+    switch ($_GET['updated']) {
+        case 'training_edited':
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Training material updated successfully.', 'wp-gpt-chatbot') . '</p></div>';
+            break;
+        case 'training_added':
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Training material added successfully.', 'wp-gpt-chatbot') . '</p></div>';
+            break;
+        case 'training_removed':
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Training material removed successfully.', 'wp-gpt-chatbot') . '</p></div>';
+            break;
+    }
 }
 
 // Handle adding training material manually
@@ -45,18 +83,30 @@ if (isset($_POST['add_training_material']) && isset($_POST['training_question'])
         }
         
         // Add the new training item
-        $current_settings['training_data'][] = array(
+        $new_item = array(
+            'id' => uniqid('training_', true),
             'question' => $question,
             'answer' => $answer,
             'added_at' => current_time('mysql'),
             'source_type' => 'manual'
         );
         
+        $current_settings['training_data'][] = $new_item;
+        
         // Update the option with the latest settings
         update_option('wp_gpt_chatbot_settings', $current_settings);
         
-        // Update the settings variable for the current page display
-        $settings = $current_settings;
+        // Force WordPress to clear any option caches
+        wp_cache_delete('wp_gpt_chatbot_settings', 'options');
+        
+        // Reload settings from database to ensure we have the latest data
+        $row = $wpdb->get_row($wpdb->prepare("SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1", $option_name));
+        $settings = $row ? maybe_unserialize($row->option_value) : array();
+        
+        // Initialize training_data if it doesn't exist
+        if (!isset($settings['training_data']) || !is_array($settings['training_data'])) {
+            $settings['training_data'] = array();
+        }
         
         echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Training material added successfully.', 'wp-gpt-chatbot') . '</p></div>';
     }
@@ -81,12 +131,31 @@ if (isset($_GET['action']) && $_GET['action'] === 'remove_training' && isset($_G
     
     if (isset($current_settings['training_data'][$index])) {
         array_splice($current_settings['training_data'], $index, 1);
-        update_option('wp_gpt_chatbot_settings', $current_settings);
         
-        // Update the settings variable for the current page display
-        $settings = $current_settings;
+        // Use direct database update to avoid hooks that might cause issues
+        global $wpdb;
+        $wpdb->update(
+            $wpdb->options,
+            array('option_value' => maybe_serialize($current_settings)),
+            array('option_name' => 'wp_gpt_chatbot_settings'),
+            array('%s'),
+            array('%s')
+        );
         
-        echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Training material removed successfully.', 'wp-gpt-chatbot') . '</p></div>';
+        // Clear all caches
+        wp_cache_delete('wp_gpt_chatbot_settings', 'options');
+        wp_cache_flush();
+        delete_transient('wp_gpt_chatbot_settings');
+        
+        // Force a redirect to refresh the page completely
+        $redirect_url = add_query_arg(array(
+            'page' => 'wp-gpt-chatbot',
+            'updated' => 'training_removed',
+            'cache_bust' => time()
+        ), admin_url('admin.php'));
+        
+        wp_redirect($redirect_url);
+        exit;
     }
 }
 
@@ -120,12 +189,36 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_training' && isset($_P
             $current_settings['training_data'][$index]['answer'] = $answer;
             $current_settings['training_data'][$index]['updated_at'] = current_time('mysql');
             
-            update_option('wp_gpt_chatbot_settings', $current_settings);
+            // Add unique ID if it doesn't exist to prevent future duplicates
+            if (!isset($current_settings['training_data'][$index]['id'])) {
+                $current_settings['training_data'][$index]['id'] = uniqid('training_', true);
+            }
             
-            // Update the settings variable for the current page display
-            $settings = $current_settings;
+            // Use direct database update to avoid hooks that might be adding duplicates
+            global $wpdb;
+            $wpdb->update(
+                $wpdb->options,
+                array('option_value' => maybe_serialize($current_settings)),
+                array('option_name' => 'wp_gpt_chatbot_settings'),
+                array('%s'),
+                array('%s')
+            );
             
-            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Training material updated successfully.', 'wp-gpt-chatbot') . '</p></div>';
+            // Clear all caches
+            wp_cache_delete('wp_gpt_chatbot_settings', 'options');
+            wp_cache_flush();
+            delete_transient('wp_gpt_chatbot_settings');
+            
+            // Force a redirect to refresh the page completely
+            $redirect_url = add_query_arg(array(
+                'page' => 'wp-gpt-chatbot',
+                'updated' => 'training_edited',
+                'index' => $index,
+                'cache_bust' => time()
+            ), admin_url('admin.php'));
+            
+            wp_redirect($redirect_url);
+            exit;
         } else {
             echo '<div class="notice notice-error is-dismissible"><p>' . esc_html__('Training material not found.', 'wp-gpt-chatbot') . '</p></div>';
         }
@@ -184,8 +277,17 @@ if (isset($_POST['import_training']) && isset($_FILES['training_csv'])) {
                 // Update the option with the latest settings
                 update_option('wp_gpt_chatbot_settings', $current_settings);
                 
-                // Update the settings variable for the current page display
-                $settings = $current_settings;
+                // Force WordPress to clear any option caches
+                wp_cache_delete('wp_gpt_chatbot_settings', 'options');
+                
+                // Reload settings from database to ensure we have the latest data
+                $row = $wpdb->get_row($wpdb->prepare("SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1", $option_name));
+                $settings = $row ? maybe_unserialize($row->option_value) : array();
+                
+                // Initialize training_data if it doesn't exist
+                if (!isset($settings['training_data']) || !is_array($settings['training_data'])) {
+                    $settings['training_data'] = array();
+                }
                 
                 echo '<div class="notice notice-success is-dismissible"><p>' . sprintf(esc_html__('Successfully imported %d training material entries.', 'wp-gpt-chatbot'), $count) . '</p></div>';
             } else {
@@ -693,7 +795,9 @@ if (isset($_POST['import_training']) && isset($_FILES['training_csv'])) {
                 <input type="file" name="training_csv" accept=".csv" required>
                 <p>
                     <input type="submit" name="import_training" class="button button-secondary" value="<?php echo esc_attr__('Import CSV', 'wp-gpt-chatbot'); ?>">
+                    <button type="button" id="export-training-button" class="button button-secondary"><?php echo esc_html__('Export Training Data', 'wp-gpt-chatbot'); ?></button>
                     <a href="<?php echo esc_url(admin_url('admin.php?page=wp-gpt-chatbot-questions')); ?>" class="button"><?php echo esc_html__('Manage Unknown Questions', 'wp-gpt-chatbot'); ?></a>
+                    <span id="export-training-status"></span>
                 </p>
             </form>
         </div>
@@ -887,6 +991,51 @@ if (isset($_POST['import_training']) && isset($_FILES['training_csv'])) {
                 if ($(e.target).is('#edit-training-modal')) {
                     $('#edit-training-modal').hide();
                 }
+            });
+            
+            // Export training data functionality
+            $('#export-training-button').on('click', function() {
+                var button = $(this);
+                var statusMessage = $('#export-training-status');
+                
+                button.prop('disabled', true);
+                statusMessage.text('<?php echo esc_js(__('Preparing export...', 'wp-gpt-chatbot')); ?>');
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'wp_gpt_chatbot_export_training',
+                        nonce: '<?php echo wp_create_nonce('wp_gpt_chatbot_admin_nonce'); ?>'
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            // Create download link
+                            var blob = new Blob([response.data.csv], { type: 'text/csv' });
+                            var url = window.URL.createObjectURL(blob);
+                            var a = document.createElement('a');
+                            a.href = url;
+                            a.download = response.data.filename;
+                            document.body.appendChild(a);
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            document.body.removeChild(a);
+                            
+                            statusMessage.text('<?php echo esc_js(__('Export completed!', 'wp-gpt-chatbot')); ?>');
+                            setTimeout(function() {
+                                statusMessage.text('');
+                            }, 3000);
+                        } else {
+                            statusMessage.text('<?php echo esc_js(__('Export failed: ', 'wp-gpt-chatbot')); ?>' + response.data);
+                        }
+                    },
+                    error: function() {
+                        statusMessage.text('<?php echo esc_js(__('Export failed. Please try again.', 'wp-gpt-chatbot')); ?>');
+                    },
+                    complete: function() {
+                        button.prop('disabled', false);
+                    }
+                });
             });
         });
         </script>
