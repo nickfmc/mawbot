@@ -4,6 +4,21 @@
 (function($) {
     'use strict';
     
+    /**
+     * Push event to Google Analytics dataLayer
+     * 
+     * @param {string} event Event name
+     * @param {object} data Additional data to track
+     */
+    function trackEvent(event, data) {
+        window.dataLayer = window.dataLayer || [];
+        console.log('GA Event:', event, data); // Debug log
+        window.dataLayer.push({
+            event: event,
+            ...data
+        });
+    }
+    
     $(document).ready(function() {
         // Initialize popup chatbot if it exists
         initPopupChatbot();
@@ -35,8 +50,17 @@
         
         // Toggle chat box
         $chatButton.on('click', function() {
+            const isOpening = !$chatBox.is(':visible');
             $chatBox.toggle();
             $input.focus();
+            
+            // Track chatbot open
+            if (isOpening) {
+                trackEvent('ai_chatbot_interaction', {
+                    interaction_type: 'chatbot_opened',
+                    chatbot_type: 'popup'
+                });
+            }
         });
         
         // Close chat box
@@ -44,17 +68,38 @@
             $chatBox.hide();
         });
         
+        // Track typing in AI input (debounced)
+        let typingTracked = false;
+        $input.on('input', function() {
+            if (!typingTracked && $(this).val().trim().length > 0) {
+                typingTracked = true;
+                trackEvent('ai_chatbot_interaction', {
+                    interaction_type: 'typing_started',
+                    chatbot_type: 'popup'
+                });
+            }
+        });
+        
+        // Reset typing tracker when message is sent
+        $input.on('blur', function() {
+            if ($(this).val().trim().length === 0) {
+                typingTracked = false;
+            }
+        });
+        
         // Send message on Enter key
         $input.on('keypress', function(e) {
             if (e.which === 13 && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage($input, $messagesContainer, conversationHistory);
+                typingTracked = false;
             }
         });
         
         // Send message on button click
         $sendButton.on('click', function() {
             sendMessage($input, $messagesContainer, conversationHistory);
+            typingTracked = false;
         });
     }
     
@@ -71,17 +116,46 @@
             // Store conversation history for this instance
             let conversationHistory = [];
             
+            // Track typing in AI input (debounced)
+            let typingTracked = false;
+            $input.on('input', function() {
+                if (!typingTracked && $(this).val().trim().length > 0) {
+                    typingTracked = true;
+                    trackEvent('ai_chatbot_interaction', {
+                        interaction_type: 'typing_started',
+                        chatbot_type: 'inline'
+                    });
+                }
+            });
+            
+            // Reset typing tracker when message is sent
+            $input.on('blur', function() {
+                if ($(this).val().trim().length === 0) {
+                    typingTracked = false;
+                }
+            });
+            
+            // Track clicks in AI search box
+            $input.on('click', function() {
+                trackEvent('ai_chatbot_interaction', {
+                    interaction_type: 'search_box_clicked',
+                    chatbot_type: 'inline'
+                });
+            });
+            
             // Send message on Enter key
             $input.on('keypress', function(e) {
                 if (e.which === 13 && !e.shiftKey) {
                     e.preventDefault();
                     sendMessage($input, $messagesContainer, conversationHistory);
+                    typingTracked = false;
                 }
             });
             
             // Send message on button click
             $sendButton.on('click', function() {
                 sendMessage($input, $messagesContainer, conversationHistory);
+                typingTracked = false;
             });
         });
     }
@@ -99,6 +173,13 @@
         if (messageText === '') {
             return;
         }
+        
+        // Track message submission
+        trackEvent('ai_chatbot_interaction', {
+            interaction_type: 'message_sent',
+            message_length: messageText.length,
+            conversation_length: conversationHistory.length
+        });
         
         // Add user message to UI
         addMessage($messagesContainer, 'user', messageText);
@@ -174,6 +255,20 @@
         const $message = $('<div class="wp-gpt-chatbot-message ' + role + '"><div class="wp-gpt-chatbot-message-content">' + formatMessage(content) + '</div></div>');
         $messagesContainer.append($message);
         scrollToBottom($messagesContainer);
+        
+        // Track link clicks within AI responses
+        if (role === 'bot') {
+            $message.find('a').on('click', function(e) {
+                const linkUrl = $(this).attr('href');
+                const linkText = $(this).text();
+                trackEvent('ai_chatbot_interaction', {
+                    interaction_type: 'link_clicked',
+                    link_url: linkUrl,
+                    link_text: linkText,
+                    link_location: 'ai_response'
+                });
+            });
+        }
     }
     
     /**

@@ -3,7 +3,7 @@
  * Plugin Name: MAWBOT - Custom Chatbot with ChatGPT API
  * Plugin URI: https://example.com/wp-gpt-chatbot
  * Description: A WordPress plugin that creates a custom chatbot using the ChatGPT API with your own training material.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Nick Murray
  * Author URI: https://mountainairweb.com
  * Text Domain: wp-gpt-chatbot
@@ -201,6 +201,35 @@ function wp_gpt_chatbot_shortcode($atts) {
         var conversation = [];
         var welcomeMessage = <?php echo json_encode($atts['welcome_message']); ?>;
         var chatOpen = false;
+        
+        // Google Analytics tracking helper
+        function trackEvent(event, data) {
+            window.dataLayer = window.dataLayer || [];
+            console.log('GA Event:', event, data); // Debug log
+            window.dataLayer.push({
+                event: event,
+                ...data
+            });
+        }
+        
+        // Helper function to apply link tracking to a container
+        function applyLinkTracking($container) {
+            // Remove existing event handlers to prevent duplicates
+            $container.find('a').off('click.tracking');
+            
+            // Use event delegation to catch dynamically added links
+            $container.off('click.tracking').on('click.tracking', 'a', function(e) {
+                var linkUrl = $(this).attr('href');
+                var linkText = $(this).text();
+                console.log('Link clicked:', linkUrl, linkText); // Debug log
+                trackEvent('ai_chatbot_interaction', {
+                    interaction_type: 'link_clicked',
+                    link_url: linkUrl,
+                    link_text: linkText,
+                    link_location: 'ai_response_inline'
+                });
+            });
+        }
 
         function renderPopup(contentHtml, animateOpen = true) {
             $popup.html(
@@ -210,6 +239,10 @@ function wp_gpt_chatbot_shortcode($atts) {
                     '<button type="button" class="wp-gpt-chatbot-popup-close" aria-label="Close"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 4L14 14M14 4L4 14" stroke="#243550" stroke-width="2" stroke-linecap="round"/></svg></button>'+
                 '</div>'
             );
+            
+            // Apply link tracking to all existing links
+            applyLinkTracking($popup);
+            
             if (animateOpen) {
                 $popup.show();
                 requestAnimationFrame(function(){
@@ -227,47 +260,48 @@ function wp_gpt_chatbot_shortcode($atts) {
                 $content.scrollTop($content[0].scrollHeight);
             }
         }
+        
+        // Format message with markdown support - made global for reuse
+        function formatMarkdown(message) {
+            // First, process markdown links [text](url)
+            message = message.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+            
+            // Bold text: **text**
+            message = message.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            
+            // Italic text: *text*
+            message = message.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
+            
+            // Convert bullet points to proper list items
+            message = message.replace(/^•\s(.+)$/gm, '<li>$1</li>');
+            
+            // Convert standalone URLs to clickable links
+            message = message.replace(/(^|[^\"'>])(https?:\\/\\/[^\\s<\"']+)/g, function(match, prefix, url) {
+                if (match.indexOf('<a ') !== -1 || match.indexOf('href=') !== -1) {
+                    return match;
+                }
+                return prefix + '<a href=\"' + url + '\" target=\"_blank\" rel=\"noopener\">' + url + '</a>';
+            });
+            
+            // Wrap consecutive list items in ul tags
+            message = message.replace(/(<li>.*?<\\/li>(?:\\n<li>.*?<\\/li>)*)/g, '<ul>$1</ul>');
+            
+            // Convert line breaks to <br>
+            message = message.replace(/\\n/g, '<br>');
+            
+            // Clean up br tags around lists
+            message = message.replace(/<br><ul>/g, '<ul>');
+            message = message.replace(/<\\/ul><br>/g, '</ul>');
+            message = message.replace(/<li>(.*?)<\\/li><br>/g, '<li>$1</li>');
+            
+            return message;
+        }
 
         function typeAssistantMessage($container, text, callback) {
             var i = 0;
             var speed = 18; // ms per character
             
             // Format the full text first with markdown support
-            function formatMarkdown(message) {
-                // First, process markdown links [text](url)
-                message = message.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-                
-                // Bold text: **text**
-                message = message.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                
-                // Italic text: *text*
-                message = message.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
-                
-                // Convert bullet points to proper list items
-                message = message.replace(/^•\s(.+)$/gm, '<li>$1</li>');
-                
-                // Convert standalone URLs to clickable links
-                message = message.replace(/(^|[^"'>])(https?:\/\/[^\s<"']+)/g, function(match, prefix, url) {
-                    if (match.indexOf('<a ') !== -1 || match.indexOf('href=') !== -1) {
-                        return match;
-                    }
-                    return prefix + '<a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>';
-                });
-                
-                // Wrap consecutive list items in ul tags
-                message = message.replace(/(<li>.*?<\/li>(?:\n<li>.*?<\/li>)*)/g, '<ul>$1</ul>');
-                
-                // Convert line breaks to <br>
-                message = message.replace(/\n/g, '<br>');
-                
-                // Clean up br tags around lists
-                message = message.replace(/<br><ul>/g, '<ul>');
-                message = message.replace(/<\/ul><br>/g, '</ul>');
-                message = message.replace(/<li>(.*?)<\/li><br>/g, '<li>$1</li>');
-                
-                return message;
-            }
-            
             var formattedText = formatMarkdown(text);
             
             function type() {
@@ -278,8 +312,12 @@ function wp_gpt_chatbot_shortcode($atts) {
                     // Scroll to bottom as message types
                     var $content = $container.closest('.wp-gpt-chatbot-popup-content');
                     $content.scrollTop($content[0].scrollHeight);
-                } else if (callback) {
-                    callback();
+                } else {
+                    // Apply link tracking after typing is complete
+                    applyLinkTracking($container);
+                    if (callback) {
+                        callback();
+                    }
                 }
             }
             type();
@@ -289,6 +327,14 @@ function wp_gpt_chatbot_shortcode($atts) {
             e.preventDefault();
             var question = $input.val().trim();
             if(!question) return;
+            
+            // Track "Ask Us How" button click
+            trackEvent('ai_chatbot_interaction', {
+                interaction_type: 'ask_us_how_clicked',
+                question: question,
+                chatbot_type: 'inline'
+            });
+            
             conversation.push({role:'user',content:question});
             renderPopup('<div class="wp-gpt-chatbot-thinking">Thinking...</div>');
             $.ajax({
@@ -311,13 +357,18 @@ function wp_gpt_chatbot_shortcode($atts) {
                             }else if(i === conversation.length-1){
                                 html += '<div class="wp-gpt-chatbot-msg-assistant"><span class="wp-gpt-type-anim"></span></div>';
                             }else{
-                                html += '<div class="wp-gpt-chatbot-msg-assistant"><span>' + $('<div>').text(msg.content).html().replace(/\n/g,'<br>') + '</span></div>';
+                                // Format assistant messages properly with links
+                                var formattedContent = formatMarkdown(msg.content);
+                                html += '<div class="wp-gpt-chatbot-msg-assistant"><span>' + formattedContent + '</span></div>';
                             }
                         }
                         renderPopup(html);
                         var $typeAnim = $popup.find('.wp-gpt-type-anim');
                         if($typeAnim.length) {
                             typeAssistantMessage($typeAnim, response.data.message);
+                        } else {
+                            // If no typing animation, apply link tracking immediately
+                            applyLinkTracking($popup);
                         }
                     }else{
                         renderPopup('<div class="wp-gpt-chatbot-error">'+$('<div>').text(response.data.message).html()+'</div>');
@@ -335,11 +386,45 @@ function wp_gpt_chatbot_shortcode($atts) {
             setTimeout(function(){ $popup.hide().removeClass('closing'); conversation = []; }, 400);
         });
         $wrapper.on('click','.wp-gpt-chatbot-popup-human',function(){
+            // Track "Contact a Human" button click
+            trackEvent('ai_chatbot_interaction', {
+                interaction_type: 'contact_human_clicked',
+                conversation_length: conversation.length,
+                chatbot_type: 'inline'
+            });
             $popup.append('');
         });
         $input.on('focus',function(){
             // Do not hide popup on focus anymore
         });
+        
+        // Track typing in inline input field
+        var typingTracked = false;
+        $input.on('input', function() {
+            if (!typingTracked && $(this).val().trim().length > 0) {
+                typingTracked = true;
+                trackEvent('ai_chatbot_interaction', {
+                    interaction_type: 'typing_started',
+                    chatbot_type: 'inline'
+                });
+            }
+        });
+        
+        // Track clicks in the inline search box
+        $input.on('click', function() {
+            trackEvent('ai_chatbot_interaction', {
+                interaction_type: 'search_box_clicked',
+                chatbot_type: 'inline'
+            });
+        });
+        
+        // Reset typing tracker when input is cleared
+        $input.on('blur', function() {
+            if ($(this).val().trim().length === 0) {
+                typingTracked = false;
+            }
+        });
+        
         var placeholderAnimationActive = true;
         var placeholderTimeout;
         var placeholderSuggestions = $wrapper.data('placeholder-suggestions');
@@ -374,6 +459,14 @@ function wp_gpt_chatbot_shortcode($atts) {
                 // Send question on pill click
                 $pillsPopup.on('click', '.wp-gpt-chatbot-pill', function(){
                     var phrase = $(this).find('span').text();
+                    
+                    // Track suggested question click
+                    trackEvent('ai_chatbot_interaction', {
+                        interaction_type: 'suggested_question_clicked',
+                        question: phrase,
+                        chatbot_type: 'inline'
+                    });
+                    
                     $input.val(phrase).focus();
                     $pillsPopup.hide();
                     $form.submit();
