@@ -12,7 +12,6 @@
      */
     function trackEvent(event, data) {
         window.dataLayer = window.dataLayer || [];
-        console.log('GA Event:', event, data); // Debug log
         window.dataLayer.push({
             event: event,
             ...data

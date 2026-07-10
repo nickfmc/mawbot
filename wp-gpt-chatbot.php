@@ -205,7 +205,6 @@ function wp_gpt_chatbot_shortcode($atts) {
         // Google Analytics tracking helper
         function trackEvent(event, data) {
             window.dataLayer = window.dataLayer || [];
-            console.log('GA Event:', event, data); // Debug log
             window.dataLayer.push({
                 event: event,
                 ...data
@@ -221,7 +220,6 @@ function wp_gpt_chatbot_shortcode($atts) {
             $container.off('click.tracking').on('click.tracking', 'a', function(e) {
                 var linkUrl = $(this).attr('href');
                 var linkText = $(this).text();
-                console.log('Link clicked:', linkUrl, linkText); // Debug log
                 trackEvent('ai_chatbot_interaction', {
                     interaction_type: 'link_clicked',
                     link_url: linkUrl,
@@ -276,23 +274,23 @@ function wp_gpt_chatbot_shortcode($atts) {
             message = message.replace(/^•\s(.+)$/gm, '<li>$1</li>');
             
             // Convert standalone URLs to clickable links
-            message = message.replace(/(^|[^\"'>])(https?:\\/\\/[^\\s<\"']+)/g, function(match, prefix, url) {
+            message = message.replace(/(^|[^"'>])(https?:\/\/[^\s<"']+)/g, function(match, prefix, url) {
                 if (match.indexOf('<a ') !== -1 || match.indexOf('href=') !== -1) {
                     return match;
                 }
-                return prefix + '<a href=\"' + url + '\" target=\"_blank\" rel=\"noopener\">' + url + '</a>';
+                return prefix + '<a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>';
             });
             
             // Wrap consecutive list items in ul tags
-            message = message.replace(/(<li>.*?<\\/li>(?:\\n<li>.*?<\\/li>)*)/g, '<ul>$1</ul>');
+            message = message.replace(/(<li>.*?<\/li>(?:\n<li>.*?<\/li>)*)/g, '<ul>$1</ul>');
             
             // Convert line breaks to <br>
-            message = message.replace(/\\n/g, '<br>');
+            message = message.replace(/\n/g, '<br>');
             
             // Clean up br tags around lists
             message = message.replace(/<br><ul>/g, '<ul>');
-            message = message.replace(/<\\/ul><br>/g, '</ul>');
-            message = message.replace(/<li>(.*?)<\\/li><br>/g, '<li>$1</li>');
+            message = message.replace(/<\/ul><br>/g, '</ul>');
+            message = message.replace(/<li>(.*?)<\/li><br>/g, '<li>$1</li>');
             
             return message;
         }
@@ -331,7 +329,6 @@ function wp_gpt_chatbot_shortcode($atts) {
             // Track "Ask Us How" button click
             trackEvent('ai_chatbot_interaction', {
                 interaction_type: 'ask_us_how_clicked',
-                question: question,
                 chatbot_type: 'inline'
             });
             
@@ -460,10 +457,9 @@ function wp_gpt_chatbot_shortcode($atts) {
                 $pillsPopup.on('click', '.wp-gpt-chatbot-pill', function(){
                     var phrase = $(this).find('span').text();
                     
-                    // Track suggested question click
+                    // Track suggested question click (without question text)
                     trackEvent('ai_chatbot_interaction', {
                         interaction_type: 'suggested_question_clicked',
-                        question: phrase,
                         chatbot_type: 'inline'
                     });
                     

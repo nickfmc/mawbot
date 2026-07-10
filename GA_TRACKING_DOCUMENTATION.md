@@ -4,22 +4,21 @@
 This document describes the Google Analytics (GA4) dataLayer tracking events that have been implemented for the WP GPT Chatbot plugin.
 
 ## Implementation Date
-November 26, 2025 (Updated with link tracking fixes)
+December 2, 2025 (Updated with fixes and tracking optimization)
 
-## Recent Fixes (Nov 26, 2025)
+## Recent Fixes (Dec 2, 2025)
 
-### Link Tracking Issues Resolved:
-1. **Event Delegation**: Links are now tracked using event delegation to catch dynamically added content
-2. **Conversation History**: Fixed markdown formatting in conversation history so older messages have clickable links
-3. **Timing Issues**: Link tracking is now applied after typing animation completes
-4. **Debug Logging**: Added console logging to help troubleshoot tracking issues
+### Critical Bug Fixes:
+1. **Fixed Broken Chatbot**: Corrected malformed regex patterns in `formatMarkdown()` function that were preventing the chatbot from working
+2. **Removed Problematic Data**: Eliminated question text tracking from suggested questions and "Ask Us How" events as requested
+3. **Production Ready**: Removed debug console logging for cleaner production environment
+4. **Stable Link Tracking**: Maintained link click tracking functionality while fixing core chatbot issues
 
-### Key Improvements:
-- Links in AI responses are tracked immediately when rendered
-- Links added via typing animation are tracked after completion  
-- All conversation history now properly formats and tracks links
-- Event delegation prevents duplicate event handlers
-- Debug console messages help verify tracking is working
+### Key Changes:
+- Fixed regex escape sequences in markdown formatting
+- Removed `question` field from `ask_us_how_clicked` and `suggested_question_clicked` events
+- Cleaned up console logging for production use
+- Ensured chatbot functionality is fully restored
 
 ## Events Tracked
 
@@ -66,10 +65,10 @@ Tracks when users submit a question using the "Ask Us How >" button in the inlin
 {
   event: 'ai_chatbot_interaction',
   interaction_type: 'ask_us_how_clicked',
-  question: 'The user\'s question text',
   chatbot_type: 'inline'
 }
 ```
+*Note: Question text is no longer tracked to avoid data issues.*
 
 ### 4. "Contact a Human" Button Clicks
 **Event Name:** `ai_chatbot_interaction`
@@ -146,10 +145,10 @@ Tracks when users click on suggested question pills/buttons.
 {
   event: 'ai_chatbot_interaction',
   interaction_type: 'suggested_question_clicked',
-  question: 'The suggested question text',
   chatbot_type: 'inline'
 }
 ```
+*Note: Question text is no longer tracked to avoid data issues.*
 
 ## Files Modified
 
